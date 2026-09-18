@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Haba Driver</title>
+    <meta name="theme-color" content="#111111">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' rx='45' fill='%23111111'/%3E%3Cpolygon points='20,80 170,30 80,110' fill='%23FFFFFF' fill-opacity='0.75'/%3E%3Cpolygon points='120,180 170,30 80,110' fill='%23FFFFFF'/%3E%3Cpolygon points='20,80 80,110 80,140' fill='%23FFFFFF' fill-opacity='0.55'/%3E%3C/svg%3E">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Michroma&display=swap" rel="stylesheet">
+
+    <!--
+      ============================================================================
+      HABA DRIVER — companion app for the Haba Ride rider flow in index.html.
+
+      Shares the SAME Firebase project as the rider app. It reads/writes exactly
+      the schema the rider app already expects (see index.html, search "haba-ride"):
+
+        drivers/{uid}          : { online: bool, lat: number, lng: number, vehicleType: 'car'|'bike'|'scoot'|'womandrive' }
+        driver_profiles/{uid}  : { name, photoURL, vehicleModel, vehicleColor, plate, rating }
+        ride_requests/{id}     : { riderUid, riderName, riderPhoto, rideType, seats,
+                                    pickup:{lat,lng,label}, dropoff:{lat,lng,label},
+                                    distanceKm, durationMin, price,
+                                    status: 'requested'|'accepted'|'arriving'|'in_progress'|'completed'|'cancelled',
+                                    driverId, createdAt, updatedAt, cancelledBy, cancelReason }
+
+      This app NEVER invents drivers or requests — same "no simulated data" rule
+      the rider app follows. It claims requests via a Realtime DB transaction
+      (so two drivers can't accept the same ride), then walks the request through
+      accepted -> arriving -> in_progress -> completed. The rider app just
+      reflects whatever this app writes.
+
+      DEPLOYMENT NOTES (read before shipping):
+      1. This needs live Firebase Auth + Realtime Database access, so it must be
+         hosted for real (Firebase Hosting, your own server, etc.) — it will not
+         run inside a sandboxed preview that blocks outbound network calls.
+      2. Realtime Database rules need query indexes for the two queries this app
+         runs on ride_requests:
+             "ride_requests": {
+               ".indexOn": ["status", "driverId"]
+             }
+         Add that under your existing rules (same DB the rider app already uses).
+      3. The Google Map is optional polish. It reuses the rider app's existing
+         `getGoogleMapsApiKey` Cloud Function (Maps key held server-side, handed
+         to signed-in clients) — no map key is hardcoded here either.
+      4. Drivers sign in with email + password. If a driver already has a Haba
+         rider account created with email/password, the same login works here
+         too, since it's the same Firebase Auth user pool. Phone-auth-only
+         accounts will need to set a password first (or just create a fresh
+         driver account with email/password) — this file doesn't attempt phone
+         auth to keep the driver flow to one screen.
+      ============================================================================
+    -->
+
+    <style>
+        :root {
+            --ink: #111111;
+            --ink-rgb: 17, 17, 17;
+            --bg: #FFFFFF;
+            --bg-alt: #F7F8FA;
+            --bg-input: #F0F2F5;
+            --border: #ECECEC;
+            --text-primary: #111111;
+            --text-secondary: #8A8A8E;
+            --danger: #FF453A;
+            --success: #34C759;
+            --women: #E5148C;
+            --women-dark: #C2126F;
+            --radius-pill: 999px;
+            --shadow-card: 0 6px 20px rgba(17,17,17,0.06), 0 1px 3px rgba(17,17,17,0.04);
+            --ease: cubic-bezier(0.16, 1, 0.3, 1);
+            --font-brand: 'Michroma', sans-serif;
+            --nav-safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; }
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-alt);
+            color: var(--text-primary);
+            overscroll-behavior-y: contain;
+        }
+        button, input { font-family: inherit; }
+        .app-shell {
+            max-width: 480px;
+            margin: 0 auto;
+            min-height: 100vh;
+            background: var(--bg);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .screen { display: none; flex: 1; flex-direction: column; }
+        .screen.active { display: flex; }
+
+        /* ── Shared bits ───────────────────────────────────────────── */
+        .brand { font-family: var(--font-brand); font-size: 22px; color: var(--ink); letter-spacing: 0.5px; }
+        .brand-dot { color: var(--women); }
+        .btn-primary {
+            width: 100%; padding: 15px; border: none; border-radius: var(--radius-pill);
+            background: var(--ink); color: #fff; font-weight: 700; font-size: 15px;
+            cursor: pointer; transition: transform 0.15s var(--ease), opacity 0.15s;
+        }
+        .btn-primary:active { transform: scale(0.98); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary {
+            width: 100%; padding: 13px; border: 1.5px solid var(--border); border-radius: var(--radius-pill);
+            background: none; color: var(--text-primary); font-weight: 700; font-size: 14px; cursor: pointer;
+        }
+        .btn-danger-outline {
+            width: 100%; padding: 13px; margin-top: 10px; border: 1.5px solid var(--border); border-radius: var(--radius-pill);
+            background: none; color: var(--danger); font-weight: 700; font-size: 14px; cursor: pointer;
+        }
+        .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; text-align: left; }
+        .field label { font-size: 12.5px; font-weight: 700; color: var(--text-secondary); }
+        .field .optional { font-weight: 400; text-transform: none; }
+        .field input, .field select {
+            padding: 13px 14px; border-radius: 12px; border: 1.5px solid var(--border);
+            background: var(--bg-input); font-size: 15px; color: var(--text-primary); outline: none;
+        }
+        .field input:focus { border-color: var(--ink); }
+        .error-text { color: var(--danger); font-size: 13px; min-height: 16px; text-align: left; }
+        .empty-msg { color: var(--text-secondary); font-size: 13.5px; text-align: center; padding: 18px 10px; }
+
+        /* ── Auth screen ───────────────────────────────────────────── */
+        #screen-auth { align-items: center; justify-content: center; padding: 32px 28px; text-align: center; }
+        .auth-mark { width: 64px; height: 64px; border-radius: 18px; background: var(--ink); display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; }
+        .auth-mark svg { width: 32px; height: 32px; }
+        .auth-title { font-family: var(--font-brand); font-size: 24px; margin-bottom: 2px; }
+        .auth-sub { color: var(--text-secondary); font-size: 14px; margin-bottom: 28px; }
+        .tabs { display: flex; background: var(--bg-input); border-radius: var(--radius-pill); padding: 4px; margin-bottom: 22px; }
+        .tab-btn { flex: 1; padding: 10px; border: none; background: none; border-radius: var(--radius-pill); font-weight: 700; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; transition: 0.15s; }
+        .tab-btn.active { background: #fff; color: var(--ink); box-shadow: var(--shadow-card); }
+        #form-auth { width: 100%; }
+        .auth-hint { font-size: 12px; color: var(--text-secondary); margin-top: 18px; line-height: 1.5; }
+
+        /* ── Onboarding screen ─────────────────────────────────────── */
+        #screen-onboarding { padding: 28px 22px 40px; overflow-y: auto; }
+        #screen-onboarding h1 { font-size: 21px; margin: 6px 0 2px; }
+        #screen-onboarding .sub { color: var(--text-secondary); font-size: 13.5px; margin-bottom: 24px; }
+        .vehicle-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .vtype-btn {
+            display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: 14px;
+            border: 1.5px solid var(--border); background: var(--bg-input); font-weight: 700; font-size: 13px;
+            color: var(--text-primary); cursor: pointer; text-align: left;
+        }
+        .vtype-btn .emoji { font-size: 18px; }
+        .vtype-btn.active { border-color: var(--ink); background: rgba(var(--ink-rgb), 0.06); }
+        .vtype-btn.vtype-pink.active { border-color: var(--women); background: rgba(229,20,140,0.08); color: var(--women-dark); }
+
+        /* ── Dashboard ─────────────────────────────────────────────── */
+        #screen-dashboard { flex: 1; }
+        .dash-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+        }
+        .dash-title-row { display: flex; align-items: baseline; gap: 6px; }
+        .dash-title-sub { font-size: 12px; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.3px; text-transform: uppercase; }
+        .icon-btn {
+            width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--border);
+            background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px;
+        }
+
+        .online-toggle-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+        }
+        .online-toggle-label { font-size: 15px; font-weight: 800; }
+        .online-toggle-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; max-width: 230px; }
+        .switch { position: relative; width: 50px; height: 30px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; inset: 0; background: #D9D9DE; border-radius: 999px; transition: 0.2s; }
+        .slider::before { content: ""; position: absolute; height: 24px; width: 24px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
+        input:checked + .slider { background: var(--success); }
+        input:checked + .slider::before { transform: translateX(20px); }
+        input:disabled + .slider { opacity: 0.5; cursor: not-allowed; }
+
+        .map-canvas { width: 100%; height: 180px; background: var(--bg-input); flex-shrink: 0; }
+
+        .panel { padding: 16px 20px 20px; }
+        .panel h2 { font-size: 14px; font-weight: 800; margin: 0 0 12px; }
+
+        .incoming-list { display: flex; flex-direction: column; gap: 10px; }
+        .ride-card {
+            border: 1.5px solid var(--border); border-radius: 16px; padding: 14px;
+            display: flex; flex-direction: column; gap: 10px; background: var(--bg);
+        }
+        .ride-card-top { display: flex; align-items: center; justify-content: space-between; }
+        .ride-type-chip {
+            display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800;
+            padding: 4px 10px; border-radius: var(--radius-pill); background: rgba(var(--ink-rgb),0.06);
+        }
+        .ride-type-chip.womandrive { background: rgba(229,20,140,0.1); color: var(--women-dark); }
+        .ride-price { font-size: 17px; font-weight: 800; }
+        .ride-route { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+        .ride-route b { color: var(--text-primary); font-weight: 600; }
+        .ride-meta-row { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+        .btn-accept {
+            padding: 11px; border: none; border-radius: var(--radius-pill); background: var(--ink);
+            color: #fff; font-weight: 700; font-size: 13.5px; cursor: pointer;
+        }
+
+        .trip-status-badge {
+            display: inline-block; font-size: 12.5px; font-weight: 800; color: var(--ink);
+            background: rgba(var(--ink-rgb),0.08); padding: 6px 12px; border-radius: var(--radius-pill); margin-bottom: 14px;
+        }
+        .trip-rider-row { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+        .trip-rider-avatar { width: 48px; height: 48px; border-radius: 50%; background-size: cover; background-position: center; background-color: var(--bg-input); flex-shrink: 0; }
+        .trip-rider-name { font-size: 15px; font-weight: 800; }
+        .trip-rider-fare { font-size: 13.5px; color: var(--text-secondary); font-weight: 700; margin-top: 1px; }
+        .trip-stops { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+        .trip-stop { display: flex; align-items: flex-start; gap: 10px; }
+        .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+        .dot.pickup { background: var(--ink); }
+        .dot.dropoff { background: transparent; border: 2px solid var(--ink); }
+        .stop-label { font-size: 11.5px; color: var(--text-secondary); }
+        .stop-value { font-size: 14px; font-weight: 700; }
+        .trip-meta-row {
+            display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border); margin-bottom: 16px; font-size: 13px; font-weight: 700; color: var(--text-secondary);
+        }
+        .trip-meta-row span { color: var(--text-primary); }
+
+        .earnings-strip {
+            margin-top: auto; padding: 14px 20px calc(14px + var(--nav-safe-bottom));
+            border-top: 1px solid var(--border); font-size: 13.5px; color: var(--text-secondary); text-align: center;
+        }
+        .earnings-strip strong { color: var(--text-primary); }
+
+        /* ── Toasts ────────────────────────────────────────────────── */
+        #toast-container { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 999; width: min(92%, 440px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .toast {
+            padding: 12px 16px; border-radius: 12px; background: #1c1c1e; color: #fff; font-size: 13.5px; font-weight: 600;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2); animation: toast-in 0.2s var(--ease);
+        }
+        .toast.error { background: #B3261E; }
+        .toast.success { background: #1D6E3F; }
+        @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+        .loading-screen { position: fixed; inset: 0; background: #fff; display: flex; align-items: center; justify-content: center; z-index: 500; }
+        .spinner { width: 30px; height: 30px; border: 3px solid var(--border); border-top-color: var(--ink); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="toast-container"></div>
+    <div id="loading-screen" class="loading-screen"><div class="spinner"></div></div>
+
+    <div class="app-shell">
+
+        <!-- ═══ AUTH ═══ -->
+        <div id="screen-auth" class="screen">
+            <div class="auth-mark">
+                <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <polygon points="20,80 170,30 80,110" fill="#FFFFFF" fill-opacity="0.75"/>
+                    <polygon points="120,180 170,30 80,110" fill="#FFFFFF"/>
+                    <polygon points="20,80 80,110 80,140" fill="#FFFFFF" fill-opacity="0.55"/>
+                </svg>
+            </div>
+            <div class="auth-title">Haba Driver</div>
+            <div class="auth-sub">Sign in to start accepting rides</div>
+
+            <div class="tabs">
+                <button type="button" class="tab-btn active" data-mode="signin">Sign in</button>
+                <button type="button" class="tab-btn" data-mode="signup">Create account</button>
+            </div>
+
+            <form id="form-auth">
+                <div class="field">
+                    <label for="auth-email">Email</label>
+                    <input type="email" id="auth-email" autocomplete="email" required>
+                </div>
+                <div class="field">
+                    <label for="auth-password">Password</label>
+                    <input type="password" id="auth-password" autocomplete="current-password" required minlength="6">
+                </div>
+                <div class="error-text" id="auth-error"></div>
+                <button type="submit" class="btn-primary" id="btn-auth-submit">Sign in</button>
+            </form>
+            <div class="auth-hint">Already have a Haba rider account with an email &amp; password? The same login works here.</div>
+        </div>
+
+        <!-- ═══ ONBOARDING ═══ -->
+        <div id="screen-onboarding" class="screen">
+            <h1>Set up your driver profile</h1>
+            <div class="sub">Riders see this once you accept their trip.</div>
+            <form id="form-onboarding">
+                <div class="field">
+                    <label for="ob-name">Full name</label>
+                    <input type="text" id="ob-name" required>
+                </div>
+                <div class="field">
+                    <label for="ob-photo">Photo URL <span class="optional">(optional)</span></label>
+                    <input type="url" id="ob-photo" placeholder="https://...">
+                </div>
+                <div class="field">
+                    <label>Vehicle type</label>
+                    <div class="vehicle-type-grid" id="ob-vehicle-type">
+                        <button type="button" class="vtype-btn active" data-type="car"><span class="emoji">🚗</span> Car</button>
+                        <button type="button" class="vtype-btn" data-type="bike"><span class="emoji">🏍️</span> Bike</button>
+                        <button type="button" class="vtype-btn" data-type="scoot"><span class="emoji">🛵</span> Scoot</button>
+                        <button type="button" class="vtype-btn vtype-pink" data-type="womandrive"><span class="emoji">👩</span> Woman Drive Woman</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="ob-model">Vehicle model</label>
+                    <input type="text" id="ob-model" placeholder="e.g. Toyota Corolla" required>
+                </div>
+                <div class="field">
+                    <label for="ob-color">Vehicle color</label>
+                    <input type="text" id="ob-color" placeholder="e.g. White" required>
+                </div>
+                <div class="field">
+                    <label for="ob-plate">License plate</label>
+                    <input type="text" id="ob-plate" placeholder="e.g. CA 123-456" required>
+                </div>
+                <div class="error-text" id="onboarding-error"></div>
+                <button type="submit" class="btn-primary">Save &amp; continue</button>
+            </form>
+        </div>
+
+        <!-- ═══ DASHBOARD ═══ -->
+        <div id="screen-dashboard" class="screen">
+            <header class="dash-header">
+                <div class="dash-title-row">
+                    <span class="brand">Haba<span class="brand-dot">.</span></span>
+                    <span class="dash-title-sub">Driver</span>
+                </div>
+                <button class="icon-btn" id="btn-signout" title="Sign out">⏻</button>
+            </header>
+
+            <div class="online-toggle-row">
+                <div>
+                    <div class="online-toggle-label" id="online-status-label">You're offline</div>
+                    <div class="online-toggle-sub" id="online-status-sub">Go online to start receiving ride requests</div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="online-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div id="map-canvas" class="map-canvas"></div>
+
+            <div id="panel-incoming" class="panel">
+                <h2>Nearby requests</h2>
+                <div id="incoming-list" class="incoming-list">
+                    <p class="empty-msg">Go online to see nearby ride requests.</p>
+                </div>
+            </div>
+
+            <div id="panel-trip" class="panel" style="display:none;">
+                <div class="trip-status-badge" id="trip-status-badge">Accepted</div>
+                <div class="trip-rider-row">
+                    <div class="trip-rider-avatar" id="trip-rider-avatar"></div>
+                    <div>
+                        <div class="trip-rider-name" id="trip-rider-name">Rider</div>
+                        <div class="trip-rider-fare" id="trip-rider-fare">R0.00</div>
+                    </div>
+                </div>
+                <div class="trip-stops">
+                    <div class="trip-stop"><span class="dot pickup"></span><div><div class="stop-label">Pickup</div><div class="stop-value" id="trip-pickup-value">--</div></div></div>
+                    <div class="trip-stop"><span class="dot dropoff"></span><div><div class="stop-label">Drop-off</div><div class="stop-value" id="trip-dropoff-value">--</div></div></div>
+                </div>
+                <div class="trip-meta-row">
+                    <div><span id="trip-distance">--</span> km</div>
+                    <div><span id="trip-duration">--</span> min</div>
+                    <div><span id="trip-seats">--</span> seats</div>
+                </div>
+                <button class="btn-primary" id="btn-trip-advance">Mark as arrived</button>
+                <button class="btn-danger-outline" id="btn-trip-cancel">Cancel trip</button>
+            </div>
+
+            <div class="earnings-strip">
+                Today: <strong id="earnings-today">R0.00</strong> · <span id="trips-today">0</span> trip<span id="trips-today-plural">s</span>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import {
+            getAuth, onAuthStateChanged, signOut,
+            signInWithEmailAndPassword, createUserWithEmailAndPassword
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import {
+            getDatabase, ref, get, set, update, onValue, off,
+            query, orderByChild, equalTo, runTransaction, onDisconnect, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
+
+        // Same Firebase project as the Haba rider app (index.html).
+        const firebaseConfig = {
+            apiKey: "AIzaSyBQSPwpVbGrdCuOoyitAeWQHIeipj2MgIY",
+            authDomain: "newstart-64c43.firebaseapp.com",
+            databaseURL: "https://newstart-64c43-default-rtdb.firebaseio.com",
+            projectId: "newstart-64c43",
+        };
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const database = getDatabase(app);
+        const functionsClient = getFunctions(app);
+        const getGoogleMapsApiKeyCallable = httpsCallable(functionsClient, 'getGoogleMapsApiKey');
+
+        const DEFAULT_AVATAR = 'data:image/svg+xml,' + encodeURIComponent(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" fill="#F0F2F5"/><circle cx="24" cy="18" r="8" fill="#C7C9D1"/><path d="M8 42c0-9 7-14 16-14s16 5 16 14" fill="#C7C9D1"/></svg>`
+        );
+
+        const RIDE_TYPE_LABEL = { car: 'Car', bike: 'Bike', scoot: 'Scoot', womandrive: 'Woman Drive Woman' };
+        const HABA_DRIVER_SEARCH_RADIUS_KM = 15;
+        const ACTIVE_STATUSES = ['accepted', 'arriving', 'in_progress'];
+
+        // ── State ─────────────────────────────────────────────────────────────
+        let currentUser = null;
+        let driverProfile = null;   // driver_profiles/{uid}
+        let vehicleType = 'car';
+        let isOnline = false;
+        let watchId = null;
+        let driverLat = null, driverLng = null;
+
+        let incomingUnsub = null;
+        let activeRideUnsub = null;
+        let activeRideId = null;
+        let activeRideData = null;
+
+        let earningsToday = 0;
+        let tripsToday = 0;
+
+        // Map (optional — degrades quietly if the Maps key/function isn't available)
+        let map = null, mapsLoadPromise = null, cachedMapsKey = null;
+        let driverMapMarker = null, pickupMapMarker = null, dropoffMapMarker = null;
+        let directionsService = null, directionsRenderer = null;
+
+        // ── Small utilities ──────────────────────────────────────────────────
+        function $(id) { return document.getElementById(id); }
+
+        function notify(message, type = 'info') {
+            const el = document.createElement('div');
+            el.className = 'toast' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
+            el.textContent = message;
+            $('toast-container').appendChild(el);
+            setTimeout(() => el.remove(), 3600);
+        }
+
+        function haversineKm(a, b) {
+            const R = 6371;
+            const dLat = (b.lat - a.lat) * Math.PI / 180;
+            const dLng = (b.lng - a.lng) * Math.PI / 180;
+            const lat1 = a.lat * Math.PI / 180, lat2 = b.lat * Math.PI / 180;
+            const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+            return R * 2 * Math.asin(Math.sqrt(h));
+        }
+
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            $(id).classList.add('active');
+        }
+
+        function setLoading(on) { $('loading-screen').style.display = on ? 'flex' : 'none'; }
+
+        // ── Auth screen ───────────────────────────────────────────────────────
+        let authMode = 'signin';
+        document.querySelectorAll('#screen-auth .tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                authMode = btn.dataset.mode;
+                document.querySelectorAll('#screen-auth .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+                $('btn-auth-submit').textContent = authMode === 'signin' ? 'Sign in' : 'Create account';
+                $('auth-error').textContent = '';
+            });
+        });
+
+        $('form-auth').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = $('auth-email').value.trim();
+            const password = $('auth-password').value;
+            const errorEl = $('auth-error');
+            const submitBtn = $('btn-auth-submit');
+            errorEl.textContent = '';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Please wait…';
+            try {
+                if (authMode === 'signin') {
+                    await signInWithEmailAndPassword(auth, email, password);
+                } else {
+                    await createUserWithEmailAndPassword(auth, email, password);
+                }
+                // onAuthStateChanged takes it from here.
+            } catch (err) {
+                errorEl.textContent = friendlyAuthError(err);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = authMode === 'signin' ? 'Sign in' : 'Create account';
+            }
+        });
+
+        function friendlyAuthError(err) {
+            const code = err && err.code || '';
+            if (code.includes('wrong-password') || code.includes('invalid-credential')) return 'Incorrect email or password.';
+            if (code.includes('user-not-found')) return 'No account with that email. Try "Create account".';
+            if (code.includes('email-already-in-use')) return 'That email already has an account. Try "Sign in".';
+            if (code.includes('weak-password')) return 'Password should be at least 6 characters.';
+            if (code.includes('invalid-email')) return 'That email address looks invalid.';
+            return 'Something went wrong — please try again.';
+        }
+
+        $('btn-signout').addEventListener('click', async () => {
+            if (isOnline) await goOffline();
+            teardownActiveRideListener();
+            teardownIncomingListener();
+            await signOut(auth);
+        });
+
+        // ── Onboarding screen ─────────────────────────────────────────────────
+        let obVehicleType = 'car';
+        document.querySelectorAll('#ob-vehicle-type .vtype-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                obVehicleType = btn.dataset.type;
+                document.querySelectorAll('#ob-vehicle-type .vtype-btn').forEach(b => b.classList.toggle('active', b === btn));
+            });
+        });
+
+        $('form-onboarding').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const errorEl = $('onboarding-error');
+            errorEl.textContent = '';
+            const name = $('ob-name').value.trim();
+            const photoURL = $('ob-photo').value.trim();
+            const vehicleModel = $('ob-model').value.trim();
+            const vehicleColor = $('ob-color').value.trim();
+            const plate = $('ob-plate').value.trim();
+            if (!name || !vehicleModel || !vehicleColor || !plate) {
+                errorEl.textContent = 'Please fill in every field.';
+                return;
+            }
+            const profile = { name, photoURL, vehicleModel, vehicleColor, plate, rating: 5.0, vehicleType: obVehicleType };
+            try {
+                await set(ref(database, `driver_profiles/${currentUser.uid}`), profile);
+                await set(ref(database, `drivers/${currentUser.uid}`), {
+                    online: false, lat: null, lng: null, vehicleType: obVehicleType, updatedAt: serverTimestamp()
+                });
+                driverProfile = profile;
+                vehicleType = obVehicleType;
+                enterDashboard();
+            } catch (err) {
+                console.error('[driver] failed to save profile', err);
+                errorEl.textContent = "Couldn't save your profile — try again.";
+            }
+        });
+
+        // ── Auth state / bootstrapping ───────────────────────────────────────
+        onAuthStateChanged(auth, async (user) => {
+            setLoading(true);
+            teardownActiveRideListener();
+            teardownIncomingListener();
+            if (isOnline) await goOffline(true);
+
+            if (!user) {
+                currentUser = null;
+                driverProfile = null;
+                showScreen('screen-auth');
+                setLoading(false);
+                return;
+            }
+
+            currentUser = user;
+            try {
+                const snap = await get(ref(database, `driver_profiles/${user.uid}`));
+                if (!snap.exists()) {
+                    showScreen('screen-onboarding');
+                    setLoading(false);
+                    return;
+                }
+                driverProfile = snap.val();
+                vehicleType = driverProfile.vehicleType || 'car';
+                await enterDashboard();
+            } catch (err) {
+                console.error('[driver] failed to load profile', err);
+                notify("Couldn't load your driver profile.", 'error');
+            }
+            setLoading(false);
+        });
+
+        async function enterDashboard() {
+            showScreen('screen-dashboard');
+            resetTripUIToIncoming();
+            initMap().catch(err => console.error('[driver] map failed to load', err));
+            // Restore an in-progress ride after a refresh/relogin, if one exists.
+            await restoreActiveRideIfAny();
+        }
+
+        async function restoreActiveRideIfAny() {
+            try {
+                const q = query(ref(database, 'ride_requests'), orderByChild('driverId'), equalTo(currentUser.uid));
+                const snap = await get(q);
+                if (!snap.exists()) return;
+                let found = null;
+                snap.forEach(child => {
+                    const val = child.val();
+                    if (val && ACTIVE_STATUSES.includes(val.status)) { found = { id: child.key, data: val }; }
+                });
+                if (found) {
+                    activeRideId = found.id;
+                    subscribeActiveRide(found.id);
+                    // If we have an active ride we must already be online — reflect that in the UI.
+                    $('online-toggle').checked = true;
+                    await goOnline(true);
+                }
+            } catch (err) {
+                console.error('[driver] failed to restore active ride', err);
+            }
+        }
+
+        // ── Online / offline ─────────────────────────────────────────────────
+        $('online-toggle').addEventListener('change', async (e) => {
+            if (e.target.checked) {
+                const ok = await goOnline();
+                if (!ok) e.target.checked = false;
+            } else {
+                if (activeRideId) {
+                    e.target.checked = true;
+                    notify("You can't go offline during an active trip.", 'info');
+                    return;
+                }
+                await goOffline();
+            }
+        });
+
+        function updateOnlineUI() {
+            $('online-toggle').disabled = !!activeRideId;
+            $('online-status-label').textContent = isOnline ? "You're online" : "You're offline";
+            $('online-status-sub').textContent = isOnline
+                ? `Looking for ${RIDE_TYPE_LABEL[vehicleType].toLowerCase()} requests nearby`
+                : 'Go online to start receiving ride requests';
+        }
+
+        async function goOnline(silent) {
+            if (!navigator.geolocation) {
+                notify('This browser has no location support — cannot go online.', 'error');
+                return false;
+            }
+            try {
+                const pos = await new Promise((resolve, reject) =>
+                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 })
+                );
+                driverLat = pos.coords.latitude;
+                driverLng = pos.coords.longitude;
+            } catch (err) {
+                notify('Location permission is required to go online.', 'error');
+                return false;
+            }
+
+            isOnline = true;
+            updateOnlineUI();
+
+            const driverRef = ref(database, `drivers/${currentUser.uid}`);
+            await update(driverRef, { online: true, lat: driverLat, lng: driverLng, vehicleType, updatedAt: serverTimestamp() });
+            onDisconnect(driverRef).update({ online: false });
+
+            watchId = navigator.geolocation.watchPosition((pos) => {
+                driverLat = pos.coords.latitude;
+                driverLng = pos.coords.longitude;
+                update(driverRef, { lat: driverLat, lng: driverLng, updatedAt: serverTimestamp() }).catch(() => {});
+                updateDriverMapMarker();
+                if (!activeRideId) renderIncomingList(); // re-sort by fresh distance
+            }, (err) => console.error('[driver] geolocation watch error', err), { enableHighAccuracy: true, maximumAge: 5000 });
+
+            if (!activeRideId) subscribeIncoming();
+            if (!silent) notify("You're online.", 'success');
+            return true;
+        }
+
+        async function goOffline(silent) {
+            isOnline = false;
+            updateOnlineUI();
+            if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+            teardownIncomingListener();
+            try {
+                await update(ref(database, `drivers/${currentUser.uid}`), { online: false, updatedAt: serverTimestamp() });
+            } catch (err) { console.error('[driver] failed to go offline', err); }
+            if (!silent) notify("You're offline.", 'info');
+        }
+
+        // ── Incoming requests ────────────────────────────────────────────────
+        function subscribeIncoming() {
+            teardownIncomingListener();
+            const q = query(ref(database, 'ride_requests'), orderByChild('status'), equalTo('requested'));
+            const handler = (snap) => {
+                const all = [];
+                snap.forEach(child => all.push({ id: child.key, data: child.val() }));
+                renderIncomingList(all);
+            };
+            onValue(q, handler);
+            incomingUnsub = () => off(q, 'value', handler);
+        }
+
+        function teardownIncomingListener() {
+            if (incomingUnsub) { incomingUnsub(); incomingUnsub = null; }
+        }
+
+        let lastIncomingSnapshot = [];
+        function renderIncomingList(all) {
+            if (all) lastIncomingSnapshot = all;
+            const list = $('incoming-list');
+            if (activeRideId) return; // trip panel is showing instead
+
+            if (!isOnline) {
+                list.innerHTML = '<p class="empty-msg">Go online to see nearby ride requests.</p>';
+                return;
+            }
+
+            const matching = lastIncomingSnapshot
+                .filter(r => r.data.rideType === vehicleType)
+                .map(r => {
+                    const pickup = r.data.pickup || {};
+                    const distanceToPickup = (driverLat != null && typeof pickup.lat === 'number')
+                        ? haversineKm({ lat: driverLat, lng: driverLng }, { lat: pickup.lat, lng: pickup.lng })
+                        : null;
+                    return { ...r, distanceToPickup };
+                })
+                .filter(r => r.distanceToPickup === null || r.distanceToPickup <= HABA_DRIVER_SEARCH_RADIUS_KM)
+                .sort((a, b) => (a.distanceToPickup ?? 0) - (b.distanceToPickup ?? 0));
+
+            if (matching.length === 0) {
+                list.innerHTML = `<p class="empty-msg">No ${RIDE_TYPE_LABEL[vehicleType].toLowerCase()} requests nearby right now.</p>`;
+                return;
+            }
+
+            list.innerHTML = matching.map(r => {
+                const d = r.data;
+                const pickupLabel = (d.pickup && d.pickup.label) || 'Pickup';
+                const dropoffLabel = (d.dropoff && d.dropoff.label) || 'Drop-off';
+                const distanceAway = r.distanceToPickup !== null ? `${r.distanceToPickup.toFixed(1)} km away` : '';
+                return `<div class="ride-card" data-request-id="${r.id}">
+                    <div class="ride-card-top">
+                        <span class="ride-type-chip${d.rideType === 'womandrive' ? ' womandrive' : ''}">${RIDE_TYPE_LABEL[d.rideType] || d.rideType}</span>
+                        <span class="ride-price">R${Number(d.price || 0).toFixed(2)}</span>
+                    </div>
+                    <div class="ride-route"><b>${escapeHtml(pickupLabel)}</b> → ${escapeHtml(dropoffLabel)}</div>
+                    <div class="ride-meta-row">
+                        <span>${(d.distanceKm ?? 0).toFixed(1)} km trip</span>
+                        <span>${Math.round(d.durationMin ?? 0)} min</span>
+                        ${distanceAway ? `<span>${distanceAway}</span>` : ''}
+                    </div>
+                    <button class="btn-accept" data-accept="${r.id}">Accept</button>
+                </div>`;
+            }).join('');
+
+            list.querySelectorAll('[data-accept]').forEach(btn => {
+                btn.addEventListener('click', () => acceptRequest(btn.dataset.accept));
+            });
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // ── Accepting a request (transaction — first driver wins) ──────────────
+        async function acceptRequest(requestId) {
+            const reqRef = ref(database, `ride_requests/${requestId}`);
+            let result;
+            try {
+                result = await runTransaction(reqRef, (current) => {
+                    if (!current || current.status !== 'requested') return; // abort — already taken/removed
+                    current.status = 'accepted';
+                    current.driverId = currentUser.uid;
+                    current.updatedAt = serverTimestamp();
+                    return current;
+                });
+            } catch (err) {
+                console.error('[driver] accept transaction failed', err);
+                notify("Couldn't accept this ride — try again.", 'error');
+                return;
+            }
+            if (!result.committed || !result.snapshot.exists()) {
+                notify('Another driver already took this ride.', 'info');
+                return;
+            }
+            teardownIncomingListener();
+            activeRideId = requestId;
+            subscribeActiveRide(requestId);
+            notify('Ride accepted!', 'success');
+        }
+
+        // ── Active ride lifecycle ────────────────────────────────────────────
+        function subscribeActiveRide(requestId) {
+            teardownActiveRideListener();
+            const reqRef = ref(database, `ride_requests/${requestId}`);
+            const handler = (snap) => {
+                const request = snap.val();
+                if (!request) { finishActiveRide(); return; }
+                if (request.status === 'completed') {
+                    activeRideData = request;
+                    handleTripCompleted(request);
+                    return;
+                }
+                if (request.status === 'cancelled') {
+                    notify(request.cancelledBy === 'rider' ? 'Rider cancelled the trip.' : 'Trip cancelled.', 'info');
+                    finishActiveRide();
+                    return;
+                }
+                activeRideData = request;
+                renderTripPanel(request);
+            };
+            onValue(reqRef, handler);
+            activeRideUnsub = () => off(reqRef, 'value', handler);
+        }
+
+        function teardownActiveRideListener() {
+            if (activeRideUnsub) { activeRideUnsub(); activeRideUnsub = null; }
+        }
+
+        function renderTripPanel(request) {
+            $('panel-incoming').style.display = 'none';
+            $('panel-trip').style.display = '';
+            updateOnlineUI();
+
+            const statusLabels = { accepted: 'Accepted — head to pickup', arriving: 'Arrived — waiting for rider', in_progress: 'Trip in progress' };
+            $('trip-status-badge').textContent = statusLabels[request.status] || request.status;
+            $('trip-rider-avatar').style.backgroundImage = `url('${request.riderPhoto || DEFAULT_AVATAR}')`;
+            $('trip-rider-name').textContent = request.riderName || 'Rider';
+            $('trip-rider-fare').textContent = `R${Number(request.price || 0).toFixed(2)} fare`;
+            $('trip-pickup-value').textContent = (request.pickup && request.pickup.label) || '--';
+            $('trip-dropoff-value').textContent = (request.dropoff && request.dropoff.label) || '--';
+            $('trip-distance').textContent = (request.distanceKm ?? 0).toFixed(1);
+            $('trip-duration').textContent = Math.round(request.durationMin ?? 0);
+            $('trip-seats').textContent = request.seats ?? '--';
+
+            const advanceBtn = $('btn-trip-advance');
+            const cancelBtn = $('btn-trip-cancel');
+            if (request.status === 'accepted') { advanceBtn.textContent = 'Mark as arrived'; advanceBtn.style.display = ''; cancelBtn.style.display = ''; }
+            else if (request.status === 'arriving') { advanceBtn.textContent = 'Start trip'; advanceBtn.style.display = ''; cancelBtn.style.display = ''; }
+            else if (request.status === 'in_progress') { advanceBtn.textContent = 'Complete trip'; advanceBtn.style.display = ''; cancelBtn.style.display = 'none'; }
+
+            renderTripOnMap(request);
+        }
+
+        $('btn-trip-advance').addEventListener('click', async () => {
+            if (!activeRideId || !activeRideData) return;
+            const next = { accepted: 'arriving', arriving: 'in_progress', in_progress: 'completed' }[activeRideData.status];
+            if (!next) return;
+            const btn = $('btn-trip-advance');
+            btn.disabled = true;
+            try {
+                await update(ref(database, `ride_requests/${activeRideId}`), { status: next, updatedAt: serverTimestamp() });
+            } catch (err) {
+                console.error('[driver] failed to advance trip status', err);
+                notify("Couldn't update the trip — try again.", 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        $('btn-trip-cancel').addEventListener('click', async () => {
+            if (!activeRideId) return;
+            if (!confirm('Cancel this trip?')) return;
+            try {
+                await update(ref(database, `ride_requests/${activeRideId}`), {
+                    status: 'cancelled', cancelledBy: 'driver', updatedAt: serverTimestamp()
+                });
+                notify('Trip cancelled.', 'info');
+            } catch (err) {
+                console.error('[driver] failed to cancel trip', err);
+                notify("Couldn't cancel — try again.", 'error');
+            }
+        });
+
+        function handleTripCompleted(request) {
+            const fare = Number(request.price || 0);
+            earningsToday += fare;
+            tripsToday += 1;
+            $('earnings-today').textContent = `R${earningsToday.toFixed(2)}`;
+            $('trips-today').textContent = tripsToday;
+            $('trips-today-plural').textContent = tripsToday === 1 ? '' : 's';
+            notify(`Trip complete — R${fare.toFixed(2)} earned.`, 'success');
+            finishActiveRide();
+        }
+
+        function finishActiveRide() {
+            teardownActiveRideListener();
+            activeRideId = null;
+            activeRideData = null;
+            clearTripMapOverlays();
+            resetTripUIToIncoming();
+            updateOnlineUI();
+            if (isOnline) subscribeIncoming();
+        }
+
+        function resetTripUIToIncoming() {
+            $('panel-trip').style.display = 'none';
+            $('panel-incoming').style.display = '';
+            renderIncomingList();
+        }
+
+        // ── Google Maps (optional polish; reuses the rider app's Cloud Function) ──
+        async function fetchMapsKey() {
+            if (cachedMapsKey) return cachedMapsKey;
+            try {
+                const result = await getGoogleMapsApiKeyCallable();
+                const key = (result.data && result.data.apiKey) || '';
+                if (key) cachedMapsKey = key;
+                return key;
+            } catch (err) {
+                console.error('[driver] getGoogleMapsApiKey failed', err);
+                return '';
+            }
+        }
+
+        function loadGoogleMapsScript() {
+            if (mapsLoadPromise) return mapsLoadPromise;
+            mapsLoadPromise = (async () => {
+                if (window.google && window.google.maps) return;
+                const key = await fetchMapsKey();
+                if (!key) throw new Error('No Google Maps API key available');
+                await new Promise((resolve, reject) => {
+                    window.__onDriverMapsLoaded = () => resolve();
+                    const script = document.createElement('script');
+                    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&callback=__onDriverMapsLoaded`;
+                    script.async = true;
+                    script.onerror = () => reject(new Error('Failed to load Google Maps'));
+                    document.head.appendChild(script);
+                });
+            })();
+            return mapsLoadPromise;
+        }
+
+        async function initMap() {
+            try {
+                await loadGoogleMapsScript();
+            } catch (err) {
+                $('map-canvas').outerHTML = ''; // no key configured yet — just hide the map, rest of the app still works
+                return;
+            }
+            const center = (driverLat != null) ? { lat: driverLat, lng: driverLng } : { lat: 0, lng: 0 };
+            map = new google.maps.Map($('map-canvas'), { center, zoom: 13, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy' });
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, preserveViewport: false });
+            updateDriverMapMarker();
+        }
+
+        function updateDriverMapMarker() {
+            if (!map || driverLat == null) return;
+            const pos = { lat: driverLat, lng: driverLng };
+            if (!driverMapMarker) {
+                driverMapMarker = new google.maps.Marker({
+                    position: pos, map,
+                    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#111111', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 }
+                });
+                map.setCenter(pos);
+            } else {
+                driverMapMarker.setPosition(pos);
+            }
+        }
+
+        function clearTripMapOverlays() {
+            if (pickupMapMarker) { pickupMapMarker.setMap(null); pickupMapMarker = null; }
+            if (dropoffMapMarker) { dropoffMapMarker.setMap(null); dropoffMapMarker = null; }
+            if (directionsRenderer) directionsRenderer.setDirections({ routes: [] });
+        }
+
+        function renderTripOnMap(request) {
+            if (!map) return;
+            clearTripMapOverlays();
+            const pickup = request.pickup, dropoff = request.dropoff;
+            if (pickup && typeof pickup.lat === 'number') {
+                pickupMapMarker = new google.maps.Marker({ position: { lat: pickup.lat, lng: pickup.lng }, map, label: 'P' });
+            }
+            if (dropoff && typeof dropoff.lat === 'number') {
+                dropoffMapMarker = new google.maps.Marker({ position: { lat: dropoff.lat, lng: dropoff.lng }, map, label: 'D' });
+            }
+            const origin = request.status === 'in_progress' ? pickup : { lat: driverLat, lng: driverLng };
+            const destination = request.status === 'in_progress' ? dropoff : pickup;
+            if (origin && destination && typeof origin.lat === 'number' && typeof destination.lat === 'number' && directionsService) {
+                directionsService.route({
+                    origin: { lat: origin.lat, lng: origin.lng },
+                    destination: { lat: destination.lat, lng: destination.lng },
+                    travelMode: google.maps.TravelMode.DRIVING
+                }, (result, status) => {
+                    if (status === 'OK') directionsRenderer.setDirections(result);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
