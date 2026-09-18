@@ -6,328 +6,447 @@
     <title>Haba Driver</title>
     <meta name="theme-color" content="#111111">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' rx='45' fill='%23111111'/%3E%3Cpolygon points='20,80 170,30 80,110' fill='%23FFFFFF' fill-opacity='0.75'/%3E%3Cpolygon points='120,180 170,30 80,110' fill='%23FFFFFF'/%3E%3Cpolygon points='20,80 80,110 80,140' fill='%23FFFFFF' fill-opacity='0.55'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' rx='45' fill='%23111111'/%3E%3Cpolygon points='20,80 170,30 80,110' fill='%23FFFFFF' fill-opacity='0.75'/%3E%3Cpolygon points='120,180 170,30 80,110' fill='%23FFFFFF'/%3E%3Cpolygon points='20,80 80,110 80,140' fill='%23FFFFFF' fill-opacity='0.55'/%3E%3C/svg%3E">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Michroma&display=swap" rel="stylesheet">
 
     <!--
       ============================================================================
       HABA DRIVER — companion app for the Haba Ride rider flow in index.html.
+      Visual system (fonts, brand mark, splash, login/signup layout, pill inputs,
+      X-style flat black/white auth) is copied 1:1 from the rider app so this
+      reads as the same product. See inline notes near each matching block.
 
-      Shares the SAME Firebase project as the rider app. It reads/writes exactly
-      the schema the rider app already expects (see index.html, search "haba-ride"):
+      DATA MODEL — same Firebase project as the rider app, but driver signups are
+      kept on their OWN nodes and never touch the rider app's `users/{uid}` tree:
 
-        drivers/{uid}          : { online: bool, lat: number, lng: number, vehicleType: 'car'|'bike'|'scoot'|'womandrive' }
-        driver_profiles/{uid}  : { name, photoURL, vehicleModel, vehicleColor, plate, rating }
-        ride_requests/{id}     : { riderUid, riderName, riderPhoto, rideType, seats,
-                                    pickup:{lat,lng,label}, dropoff:{lat,lng,label},
-                                    distanceKm, durationMin, price,
-                                    status: 'requested'|'accepted'|'arriving'|'in_progress'|'completed'|'cancelled',
-                                    driverId, createdAt, updatedAt, cancelledBy, cancelReason }
+        driver_signups/{uid}   : { email, createdAt, role: 'driver' }   — written the
+                                  instant a driver account is created (audit trail,
+                                  separate from anything the rider app owns)
+        driver_profiles/{uid}  : { name, photoURL, vehicleModel, vehicleColor,
+                                    plate, rating, vehicleType }         — the public
+                                  profile riders see once matched (rider app already
+                                  reads this path)
+        drivers/{uid}          : { online, lat, lng, vehicleType }      — live
+                                  presence/location (rider app already reads this)
+        ride_requests/{id}     : status machine the rider app writes; this app
+                                  claims + advances it. See handleHabaRideRequestUpdate
+                                  in the rider app's index.html for the contract.
 
-      This app NEVER invents drivers or requests — same "no simulated data" rule
-      the rider app follows. It claims requests via a Realtime DB transaction
-      (so two drivers can't accept the same ride), then walks the request through
-      accepted -> arriving -> in_progress -> completed. The rider app just
-      reflects whatever this app writes.
-
-      DEPLOYMENT NOTES (read before shipping):
-      1. This needs live Firebase Auth + Realtime Database access, so it must be
-         hosted for real (Firebase Hosting, your own server, etc.) — it will not
-         run inside a sandboxed preview that blocks outbound network calls.
-      2. Realtime Database rules need query indexes for the two queries this app
-         runs on ride_requests:
-             "ride_requests": {
-               ".indexOn": ["status", "driverId"]
-             }
-         Add that under your existing rules (same DB the rider app already uses).
-      3. The Google Map is optional polish. It reuses the rider app's existing
-         `getGoogleMapsApiKey` Cloud Function (Maps key held server-side, handed
-         to signed-in clients) — no map key is hardcoded here either.
-      4. Drivers sign in with email + password. If a driver already has a Haba
-         rider account created with email/password, the same login works here
-         too, since it's the same Firebase Auth user pool. Phone-auth-only
-         accounts will need to set a password first (or just create a fresh
-         driver account with email/password) — this file doesn't attempt phone
-         auth to keep the driver flow to one screen.
+      DEPLOYMENT NOTES:
+      1. Needs live Firebase Auth + Realtime Database — host it for real (Firebase
+         Hosting, your own server), it won't work in a sandboxed preview that
+         blocks outbound network calls.
+      2. Add these indexes to your Realtime Database rules (same DB the rider app
+         already uses):
+             "ride_requests": { ".indexOn": ["status", "driverId"] }
+      3. The map reuses the rider app's existing `getGoogleMapsApiKey` Cloud
+         Function — no key is hardcoded here.
       ============================================================================
     -->
 
     <style>
         :root {
-            --ink: #111111;
-            --ink-rgb: 17, 17, 17;
-            --bg: #FFFFFF;
-            --bg-alt: #F7F8FA;
-            --bg-input: #F0F2F5;
-            --border: #ECECEC;
-            --text-primary: #111111;
-            --text-secondary: #8A8A8E;
-            --danger: #FF453A;
-            --success: #34C759;
+            --primary-blue: #111111;
+            --primary-rgb: 17, 17, 17;
             --women: #E5148C;
             --women-dark: #C2126F;
+            --bg-base: #FFFFFF;
+            --bg-alt: #F7F8FA;
+            --bg-input: #F0F2F5;
+            --bg-hover: #FAFAFA;
+            --border-color: #ECECEC;
+            --text-primary: #111111;
+            --text-secondary: #8A8A8E;
+            --danger-red: #FF453A;
+            --success-green: #34C759;
+            --link-color: #1D9BF0;
+            --font-brand: 'Michroma', sans-serif;
             --radius-pill: 999px;
             --shadow-card: 0 6px 20px rgba(17,17,17,0.06), 0 1px 3px rgba(17,17,17,0.04);
             --ease: cubic-bezier(0.16, 1, 0.3, 1);
-            --font-brand: 'Michroma', sans-serif;
-            --nav-safe-bottom: env(safe-area-inset-bottom, 0px);
         }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         html, body { height: 100%; }
         body {
-            margin: 0;
-            font-family: 'Inter', sans-serif;
-            background: var(--bg-alt);
-            color: var(--text-primary);
-            overscroll-behavior-y: contain;
+            margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-base);
+            color: var(--text-primary); overscroll-behavior-y: contain;
         }
-        button, input { font-family: inherit; }
-        .app-shell {
-            max-width: 480px;
-            margin: 0 auto;
-            min-height: 100vh;
-            background: var(--bg);
-            position: relative;
-            display: flex;
-            flex-direction: column;
+        button, input, select { font-family: inherit; }
+        img { max-width: 100%; }
+
+        /* ══════════════════════ BRANDED SPLASH (copied from index.html) ══════════════════════ */
+        #loading-overlay {
+            position: fixed; inset: 0; background: var(--bg-base); z-index: 100000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            opacity: 1; visibility: visible; transition: opacity 0.5s ease, visibility 0.5s; overflow: hidden;
+        }
+        #loading-overlay.hidden { opacity: 0; visibility: hidden; }
+        .haba-mark { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; height: 240px; z-index: 1; }
+        .haba-logo-img { position: relative; width: 150px; height: 150px; opacity: 0; animation: habaLogoIn 0.5s cubic-bezier(0.2,0.85,0.3,1.15) forwards 0.1s; display: flex; align-items: center; justify-content: center; }
+        .haba-logo-img svg { width: 92px; height: 92px; }
+        .haba-wordmark { font-family: var(--font-brand); font-size: 20px; font-weight: 400; letter-spacing: 4px; color: var(--text-primary); opacity: 0; animation: habaLogoIn 0.5s cubic-bezier(0.2,0.85,0.3,1.15) forwards 0.22s; }
+        .haba-driver-tag { font-size: 11px; font-weight: 700; letter-spacing: 3px; color: var(--text-secondary); text-transform: uppercase; opacity: 0; animation: habaLogoIn 0.5s ease forwards 0.32s; }
+        @keyframes habaLogoIn { 0% { opacity: 0; transform: scale(0.85); } 100% { opacity: 1; transform: scale(1); } }
+        .haba-mark.splash-exit { animation: none; transition: transform 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.4s ease; }
+        .haba-mark.splash-exit .haba-logo-img, .haba-mark.splash-exit .haba-wordmark, .haba-mark.splash-exit .haba-driver-tag { animation: none; opacity: 1; }
+        .haba-mark.splash-exit.splash-exit-run { transform: translateY(-32px) scale(0.94); opacity: 0; }
+        .haba-splash-dots { display: flex; align-items: center; justify-content: center; gap: 6px; opacity: 0; animation: habaLogoIn 0.4s ease forwards 0.5s; }
+        .haba-splash-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-primary); opacity: 0.35; animation: habaDotPulse 1.1s ease-in-out infinite; }
+        .haba-splash-dots span:nth-child(2) { animation-delay: 0.15s; }
+        .haba-splash-dots span:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes habaDotPulse { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.75); } 40% { opacity: 1; transform: scale(1); } }
+        .haba-mark.splash-exit .haba-splash-dots { animation: none; opacity: 0; }
+
+        /* ══════════════════════ AUTH SCREEN (X-style, copied from index.html) ══════════════════════ */
+        #auth-screen { position: fixed; inset: 0; z-index: 9999; display: none; background: var(--bg-base); }
+        #auth-screen.active { display: flex; }
+        #auth-image-side { flex: 1; background: var(--primary-blue); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; padding: 60px; }
+        .auth-x-logo-mark { display: flex; flex-direction: column; align-items: center; gap: 18px; animation: authFadeSlideUp 0.6s cubic-bezier(0.16,1,0.3,1) both; }
+        .auth-logo-circle { width: 150px; height: 150px; border-radius: 50%; background: #FFFFFF; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .auth-x-logo-mark svg { width: 92px; height: 92px; }
+        .auth-x-logo-mark span { font-family: var(--font-brand); font-size: 26px; font-weight: 400; letter-spacing: 7px; color: #FFFFFF; }
+        .auth-x-logo-mark .auth-x-tag { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 3px; color: rgba(255,255,255,0.6); text-transform: uppercase; }
+        @keyframes authFadeSlideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 768px) { #auth-image-side { display: none; } }
+
+        #auth-form-side { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; background: var(--bg-base); padding: 40px 24px; }
+        @media (max-width: 768px) {
+            #auth-form-side { padding: 0; align-items: stretch; }
+            #auth-form-side .auth-card-stack { max-width: 100%; height: 100%; }
+            #auth-form-side .auth-card { height: 100%; }
+            #auth-form-side .auth-landing { height: 100%; min-height: 100%; padding: max(32px, env(safe-area-inset-top)) 28px calc(28px + env(safe-area-inset-bottom)); justify-content: flex-start; }
         }
 
-        .screen { display: none; flex: 1; flex-direction: column; }
-        .screen.active { display: flex; }
+        .auth-card-stack { position: relative; width: 100%; max-width: 380px; }
+        .auth-card { position: relative; width: 100%; padding: 0; animation: authCardIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+        @keyframes authCardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        .auth-card-brand { display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px; margin-bottom: 30px; }
+        .auth-card-brand svg { height: 44px; width: auto; }
+        .auth-card-brand span { font-family: var(--font-brand); font-size: 14px; font-weight: 400; color: var(--text-primary); letter-spacing: 4px; }
+        .auth-card-brand small { font-size: 10.5px; font-weight: 700; letter-spacing: 2.5px; color: var(--text-secondary); text-transform: uppercase; }
+        @media (max-width: 768px) { .auth-card-brand { display: flex; } }
 
-        /* ── Shared bits ───────────────────────────────────────────── */
-        .brand { font-family: var(--font-brand); font-size: 22px; color: var(--ink); letter-spacing: 0.5px; }
-        .brand-dot { color: var(--women); }
-        .btn-primary {
-            width: 100%; padding: 15px; border: none; border-radius: var(--radius-pill);
-            background: var(--ink); color: #fff; font-weight: 700; font-size: 15px;
-            cursor: pointer; transition: transform 0.15s var(--ease), opacity 0.15s;
-        }
+        .auth-card h2 { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; color: var(--text-primary); font-size: 29px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; line-height: 1.2; }
+        .auth-card p { color: var(--text-secondary); font-size: 14.5px; margin-bottom: 26px; line-height: 1.45; }
+
+        .auth-step-back-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--bg-input); color: var(--text-primary); cursor: pointer; margin-bottom: 18px; }
+        .auth-step-back-btn svg { width: 18px; height: 18px; }
+
+        .input-group { position: relative; margin-bottom: 16px; }
+        .input-group svg { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--text-secondary); pointer-events: none; transition: color 0.2s ease; }
+        .input-group .pill-input { padding-left: 46px; margin-bottom: 0; }
+        .input-group:focus-within svg { color: var(--text-primary); }
+        .pill-input { width: 100%; padding: 14px 20px; border: 1px solid var(--border-color); border-radius: 50px; font-size: 15px; outline: none; background: var(--bg-alt); color: var(--text-primary); margin-bottom: 16px; transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease; }
+        .pill-input:focus { border-color: var(--text-primary); background: var(--bg-base); box-shadow: 0 0 0 1px var(--text-primary); }
+
+        .btn-pill { width: 100%; padding: 14px 24px; border-radius: 50px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; transition: transform 0.15s ease, opacity 0.2s ease; }
+        .btn-primary { background: var(--text-primary); color: var(--bg-base); }
+        .btn-primary:hover { opacity: 0.88; }
         .btn-primary:active { transform: scale(0.98); }
         .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary {
-            width: 100%; padding: 13px; border: 1.5px solid var(--border); border-radius: var(--radius-pill);
-            background: none; color: var(--text-primary); font-weight: 700; font-size: 14px; cursor: pointer;
-        }
-        .btn-danger-outline {
-            width: 100%; padding: 13px; margin-top: 10px; border: 1.5px solid var(--border); border-radius: var(--radius-pill);
-            background: none; color: var(--danger); font-weight: 700; font-size: 14px; cursor: pointer;
-        }
-        .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; text-align: left; }
-        .field label { font-size: 12.5px; font-weight: 700; color: var(--text-secondary); }
-        .field .optional { font-weight: 400; text-transform: none; }
-        .field input, .field select {
-            padding: 13px 14px; border-radius: 12px; border: 1.5px solid var(--border);
-            background: var(--bg-input); font-size: 15px; color: var(--text-primary); outline: none;
-        }
-        .field input:focus { border-color: var(--ink); }
-        .error-text { color: var(--danger); font-size: 13px; min-height: 16px; text-align: left; }
-        .empty-msg { color: var(--text-secondary); font-size: 13.5px; text-align: center; padding: 18px 10px; }
+        .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-primary); }
+        .btn-outline:hover { background: var(--bg-hover); }
+        .btn-outline:active { transform: scale(0.98); }
 
-        /* ── Auth screen ───────────────────────────────────────────── */
-        #screen-auth { align-items: center; justify-content: center; padding: 32px 28px; text-align: center; }
-        .auth-mark { width: 64px; height: 64px; border-radius: 18px; background: var(--ink); display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; }
-        .auth-mark svg { width: 32px; height: 32px; }
-        .auth-title { font-family: var(--font-brand); font-size: 24px; margin-bottom: 2px; }
-        .auth-sub { color: var(--text-secondary); font-size: 14px; margin-bottom: 28px; }
-        .tabs { display: flex; background: var(--bg-input); border-radius: var(--radius-pill); padding: 4px; margin-bottom: 22px; }
-        .tab-btn { flex: 1; padding: 10px; border: none; background: none; border-radius: var(--radius-pill); font-weight: 700; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; transition: 0.15s; }
-        .tab-btn.active { background: #fff; color: var(--ink); box-shadow: var(--shadow-card); }
-        #form-auth { width: 100%; }
-        .auth-hint { font-size: 12px; color: var(--text-secondary); margin-top: 18px; line-height: 1.5; }
+        .auth-divider { display: flex; align-items: center; gap: 14px; margin: 20px 0; }
+        .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-color); }
+        .auth-divider span { font-size: 12px; color: var(--text-secondary); font-weight: 500; white-space: nowrap; }
+        .toggle-auth { margin-top: 22px; font-size: 14px; color: var(--text-secondary); text-align: center; }
+        .toggle-auth span { color: var(--link-color); font-weight: 700; cursor: pointer; }
+        .toggle-auth span:hover { text-decoration: underline; }
+        .error-text { color: var(--danger-red); font-size: 13px; min-height: 16px; margin: -6px 0 10px; }
 
-        /* ── Onboarding screen ─────────────────────────────────────── */
-        #screen-onboarding { padding: 28px 22px 40px; overflow-y: auto; }
-        #screen-onboarding h1 { font-size: 21px; margin: 6px 0 2px; }
-        #screen-onboarding .sub { color: var(--text-secondary); font-size: 13.5px; margin-bottom: 24px; }
-        .vehicle-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .vtype-btn {
-            display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: 14px;
-            border: 1.5px solid var(--border); background: var(--bg-input); font-weight: 700; font-size: 13px;
-            color: var(--text-primary); cursor: pointer; text-align: left;
-        }
-        .vtype-btn .emoji { font-size: 18px; }
-        .vtype-btn.active { border-color: var(--ink); background: rgba(var(--ink-rgb), 0.06); }
-        .vtype-btn.vtype-pink.active { border-color: var(--women); background: rgba(229,20,140,0.08); color: var(--women-dark); }
+        /* ── Landing step (X's "Happening now" splash) ── */
+        .auth-landing { display: flex; flex-direction: column; height: auto; justify-content: center; }
+        .auth-landing-topbar { display: flex; align-items: center; gap: 8px; margin-bottom: 40px; }
+        .auth-landing-topbar svg { width: 26px; height: 26px; }
+        .auth-landing-topbar span { font-family: var(--font-brand); font-size: 13px; letter-spacing: 3px; color: var(--text-primary); }
+        .auth-landing-body h2 { font-size: 27px; }
+        .auth-landing-checklist { list-style: none; padding: 0; margin: 0 0 32px; display: flex; flex-direction: column; gap: 14px; }
+        .auth-landing-checklist li { display: flex; align-items: center; gap: 12px; font-size: 14.5px; color: var(--text-primary); font-weight: 500; }
+        .auth-landing-checklist svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--success-green); }
+        .auth-landing-actions { display: flex; flex-direction: column; gap: 12px; }
+        .auth-landing-btn-row { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 15px 20px; border-radius: 50px; border: 1.5px solid var(--border-color); background: var(--bg-base); font-size: 15px; font-weight: 700; color: var(--text-primary); cursor: pointer; transition: 0.15s; }
+        .auth-landing-btn-row:first-child { background: var(--text-primary); color: var(--bg-base); border-color: var(--text-primary); }
+        .auth-landing-btn-row:active { transform: scale(0.98); }
+        .auth-landing-arrow-circle { width: 26px; height: 26px; border-radius: 50%; background: rgba(var(--primary-rgb),0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .auth-landing-btn-row:first-child .auth-landing-arrow-circle { background: rgba(255,255,255,0.18); }
+        .auth-landing-arrow-circle svg { width: 14px; height: 14px; }
 
-        /* ── Dashboard ─────────────────────────────────────────────── */
-        #screen-dashboard { flex: 1; }
-        .dash-header {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 16px 20px; border-bottom: 1px solid var(--border);
-        }
-        .dash-title-row { display: flex; align-items: baseline; gap: 6px; }
-        .dash-title-sub { font-size: 12px; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.3px; text-transform: uppercase; }
-        .icon-btn {
-            width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--border);
-            background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px;
-        }
+        /* ── Vehicle-type onboarding step (matches account-type-card pattern) ── */
+        .account-type-choices { display: flex; flex-direction: column; gap: 12px; }
+        .account-type-card { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px; border-radius: 16px; border: 1.5px solid var(--border-color); background: var(--bg-base); cursor: pointer; text-align: left; transition: 0.15s; }
+        .account-type-card:hover { background: var(--bg-hover); }
+        .account-type-card.selected { border-color: var(--text-primary); background: rgba(var(--primary-rgb),0.04); }
+        .account-type-card.selected.womandrive-selected { border-color: var(--women); background: rgba(229,20,140,0.06); }
+        .account-type-card-icon { width: 52px; height: 52px; border-radius: 14px; background: var(--bg-input); display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+        .account-type-card-icon img { width: 34px; height: 34px; object-fit: contain; }
+        .account-type-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .account-type-card-title { font-size: 15px; font-weight: 800; color: var(--text-primary); }
+        .account-type-card-sub { font-size: 12.5px; color: var(--text-secondary); line-height: 1.35; }
+        .account-type-card-check { margin-left: auto; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border-color); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+        .account-type-card.selected .account-type-card-check { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
+        .account-type-card.selected.womandrive-selected .account-type-card-check { background: var(--women); border-color: var(--women); }
+        .account-type-card-check svg { width: 12px; height: 12px; opacity: 0; }
+        .account-type-card.selected .account-type-card-check svg { opacity: 1; }
 
-        .online-toggle-row {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 16px 20px; border-bottom: 1px solid var(--border);
-        }
+        /* ══════════════════════ APP SHELL / DASHBOARD ══════════════════════ */
+        #app-shell { display: none; }
+        #app-shell.active { display: block; }
+        .app-viewport { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-base); position: relative; display: flex; flex-direction: column; }
+
+        .dash-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }
+        .dash-header-brand { display: flex; align-items: center; gap: 8px; }
+        .dash-header-brand svg { width: 22px; height: 22px; }
+        .dash-header-brand .brand-word { font-family: var(--font-brand); font-size: 15px; letter-spacing: 2px; color: var(--text-primary); }
+        .dash-header-brand .brand-tag { font-size: 10px; font-weight: 700; letter-spacing: 2px; color: var(--text-secondary); text-transform: uppercase; background: var(--bg-input); padding: 3px 8px; border-radius: 6px; }
+        .icon-btn { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--border-color); background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-primary); }
+        .icon-btn svg { width: 16px; height: 16px; }
+
+        .online-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }
         .online-toggle-label { font-size: 15px; font-weight: 800; }
         .online-toggle-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; max-width: 230px; }
         .switch { position: relative; width: 50px; height: 30px; flex-shrink: 0; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; inset: 0; background: #D9D9DE; border-radius: 999px; transition: 0.2s; }
         .slider::before { content: ""; position: absolute; height: 24px; width: 24px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
-        input:checked + .slider { background: var(--success); }
+        input:checked + .slider { background: var(--success-green); }
         input:checked + .slider::before { transform: translateX(20px); }
         input:disabled + .slider { opacity: 0.5; cursor: not-allowed; }
 
         .map-canvas { width: 100%; height: 180px; background: var(--bg-input); flex-shrink: 0; }
-
         .panel { padding: 16px 20px 20px; }
         .panel h2 { font-size: 14px; font-weight: 800; margin: 0 0 12px; }
+        .empty-msg { color: var(--text-secondary); font-size: 13.5px; text-align: center; padding: 18px 10px; }
 
         .incoming-list { display: flex; flex-direction: column; gap: 10px; }
-        .ride-card {
-            border: 1.5px solid var(--border); border-radius: 16px; padding: 14px;
-            display: flex; flex-direction: column; gap: 10px; background: var(--bg);
-        }
+        .ride-card { border: 1.5px solid var(--border-color); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--bg-base); }
         .ride-card-top { display: flex; align-items: center; justify-content: space-between; }
-        .ride-type-chip {
-            display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800;
-            padding: 4px 10px; border-radius: var(--radius-pill); background: rgba(var(--ink-rgb),0.06);
-        }
+        .ride-type-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: var(--radius-pill); background: rgba(var(--primary-rgb),0.06); }
+        .ride-type-chip img { width: 14px; height: 14px; object-fit: contain; }
         .ride-type-chip.womandrive { background: rgba(229,20,140,0.1); color: var(--women-dark); }
         .ride-price { font-size: 17px; font-weight: 800; }
         .ride-route { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
         .ride-route b { color: var(--text-primary); font-weight: 600; }
         .ride-meta-row { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); font-weight: 600; }
-        .btn-accept {
-            padding: 11px; border: none; border-radius: var(--radius-pill); background: var(--ink);
-            color: #fff; font-weight: 700; font-size: 13.5px; cursor: pointer;
-        }
+        .btn-accept { padding: 11px; border: none; border-radius: var(--radius-pill); background: var(--text-primary); color: #fff; font-weight: 700; font-size: 13.5px; cursor: pointer; }
 
-        .trip-status-badge {
-            display: inline-block; font-size: 12.5px; font-weight: 800; color: var(--ink);
-            background: rgba(var(--ink-rgb),0.08); padding: 6px 12px; border-radius: var(--radius-pill); margin-bottom: 14px;
-        }
-        .trip-rider-row { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+        .trip-status-badge { display: inline-block; font-size: 12.5px; font-weight: 800; color: var(--text-primary); background: rgba(var(--primary-rgb),0.08); padding: 6px 12px; border-radius: var(--radius-pill); margin-bottom: 14px; }
+        .trip-rider-row { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border-color); margin-bottom: 14px; }
         .trip-rider-avatar { width: 48px; height: 48px; border-radius: 50%; background-size: cover; background-position: center; background-color: var(--bg-input); flex-shrink: 0; }
         .trip-rider-name { font-size: 15px; font-weight: 800; }
         .trip-rider-fare { font-size: 13.5px; color: var(--text-secondary); font-weight: 700; margin-top: 1px; }
         .trip-stops { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
         .trip-stop { display: flex; align-items: flex-start; gap: 10px; }
         .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-        .dot.pickup { background: var(--ink); }
-        .dot.dropoff { background: transparent; border: 2px solid var(--ink); }
+        .dot.pickup { background: var(--text-primary); }
+        .dot.dropoff { background: transparent; border: 2px solid var(--text-primary); }
         .stop-label { font-size: 11.5px; color: var(--text-secondary); }
         .stop-value { font-size: 14px; font-weight: 700; }
-        .trip-meta-row {
-            display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--border);
-            border-bottom: 1px solid var(--border); margin-bottom: 16px; font-size: 13px; font-weight: 700; color: var(--text-secondary);
-        }
+        .trip-meta-row { display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); margin-bottom: 16px; font-size: 13px; font-weight: 700; color: var(--text-secondary); }
         .trip-meta-row span { color: var(--text-primary); }
+        .btn-danger-outline { width: 100%; padding: 13px; margin-top: 10px; border: 1.5px solid var(--border-color); border-radius: var(--radius-pill); background: none; color: var(--danger-red); font-weight: 700; font-size: 14px; cursor: pointer; }
 
-        .earnings-strip {
-            margin-top: auto; padding: 14px 20px calc(14px + var(--nav-safe-bottom));
-            border-top: 1px solid var(--border); font-size: 13.5px; color: var(--text-secondary); text-align: center;
-        }
+        .earnings-strip { margin-top: auto; padding: 14px 20px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border-color); font-size: 13.5px; color: var(--text-secondary); text-align: center; }
         .earnings-strip strong { color: var(--text-primary); }
 
-        /* ── Toasts ────────────────────────────────────────────────── */
-        #toast-container { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 999; width: min(92%, 440px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
-        .toast {
-            padding: 12px 16px; border-radius: 12px; background: #1c1c1e; color: #fff; font-size: 13.5px; font-weight: 600;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.2); animation: toast-in 0.2s var(--ease);
-        }
+        #toast-container { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 100050; width: min(92%, 440px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .toast { padding: 12px 16px; border-radius: 12px; background: #1c1c1e; color: #fff; font-size: 13.5px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.2); animation: toast-in 0.2s var(--ease); }
         .toast.error { background: #B3261E; }
         .toast.success { background: #1D6E3F; }
         @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
-
-        .loading-screen { position: fixed; inset: 0; background: #fff; display: flex; align-items: center; justify-content: center; z-index: 500; }
-        .spinner { width: 30px; height: 30px; border: 3px solid var(--border); border-top-color: var(--ink); border-radius: 50%; animation: spin 0.8s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div id="toast-container"></div>
-    <div id="loading-screen" class="loading-screen"><div class="spinner"></div></div>
 
-    <div class="app-shell">
-
-        <!-- ═══ AUTH ═══ -->
-        <div id="screen-auth" class="screen">
-            <div class="auth-mark">
+    <!-- ═══ BRANDED SPLASH (shown until Firebase auth resolves) ═══ -->
+    <div id="loading-overlay">
+        <div class="haba-mark" id="splash-mark" role="img" aria-label="Haba Driver">
+            <div class="haba-logo-img">
                 <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                    <polygon points="20,80 170,30 80,110" fill="#FFFFFF" fill-opacity="0.75"/>
-                    <polygon points="120,180 170,30 80,110" fill="#FFFFFF"/>
-                    <polygon points="20,80 80,110 80,140" fill="#FFFFFF" fill-opacity="0.55"/>
+                    <polygon points="20,80 170,30 80,110" fill="var(--primary-blue)" fill-opacity="0.75" />
+                    <polygon points="120,180 170,30 80,110" fill="var(--primary-blue)" />
+                    <polygon points="20,80 80,110 80,140" fill="var(--primary-blue)" fill-opacity="0.55" />
                 </svg>
             </div>
-            <div class="auth-title">Haba Driver</div>
-            <div class="auth-sub">Sign in to start accepting rides</div>
+            <span class="haba-wordmark">HABA</span>
+            <span class="haba-driver-tag">Driver</span>
+            <div class="haba-splash-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+        </div>
+    </div>
 
-            <div class="tabs">
-                <button type="button" class="tab-btn active" data-mode="signin">Sign in</button>
-                <button type="button" class="tab-btn" data-mode="signup">Create account</button>
+    <!-- ═══ AUTH SCREEN ═══ -->
+    <div id="auth-screen">
+        <div id="auth-image-side">
+            <div class="auth-x-logo-mark">
+                <div class="auth-logo-circle">
+                    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Haba" fill="none" stroke="#111111" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
+                        <polygon points="20,80 170,30 80,110" stroke-opacity="0.75" />
+                        <polygon points="120,180 170,30 80,110" />
+                        <polygon points="20,80 80,110 80,140" stroke-opacity="0.55" />
+                    </svg>
+                </div>
+                <span>HABA</span>
+                <span class="auth-x-tag">Driver</span>
             </div>
-
-            <form id="form-auth">
-                <div class="field">
-                    <label for="auth-email">Email</label>
-                    <input type="email" id="auth-email" autocomplete="email" required>
-                </div>
-                <div class="field">
-                    <label for="auth-password">Password</label>
-                    <input type="password" id="auth-password" autocomplete="current-password" required minlength="6">
-                </div>
-                <div class="error-text" id="auth-error"></div>
-                <button type="submit" class="btn-primary" id="btn-auth-submit">Sign in</button>
-            </form>
-            <div class="auth-hint">Already have a Haba rider account with an email &amp; password? The same login works here.</div>
         </div>
 
-        <!-- ═══ ONBOARDING ═══ -->
-        <div id="screen-onboarding" class="screen">
-            <h1>Set up your driver profile</h1>
-            <div class="sub">Riders see this once you accept their trip.</div>
-            <form id="form-onboarding">
-                <div class="field">
-                    <label for="ob-name">Full name</label>
-                    <input type="text" id="ob-name" required>
-                </div>
-                <div class="field">
-                    <label for="ob-photo">Photo URL <span class="optional">(optional)</span></label>
-                    <input type="url" id="ob-photo" placeholder="https://...">
-                </div>
-                <div class="field">
-                    <label>Vehicle type</label>
-                    <div class="vehicle-type-grid" id="ob-vehicle-type">
-                        <button type="button" class="vtype-btn active" data-type="car"><span class="emoji">🚗</span> Car</button>
-                        <button type="button" class="vtype-btn" data-type="bike"><span class="emoji">🏍️</span> Bike</button>
-                        <button type="button" class="vtype-btn" data-type="scoot"><span class="emoji">🛵</span> Scoot</button>
-                        <button type="button" class="vtype-btn vtype-pink" data-type="womandrive"><span class="emoji">👩</span> Woman Drive Woman</button>
+        <div id="auth-form-side">
+            <div class="auth-card-stack">
+                <div class="auth-card">
+                    <div class="auth-card-brand">
+                        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Haba">
+                            <polygon points="20,80 170,30 80,110" fill="#111111" fill-opacity="0.75" />
+                            <polygon points="120,180 170,30 80,110" fill="#111111" />
+                            <polygon points="20,80 80,110 80,140" fill="#111111" fill-opacity="0.55" />
+                        </svg>
+                        <span>HABA</span>
+                        <small>Driver</small>
+                    </div>
+
+                    <!-- ── LANDING STEP ── -->
+                    <div id="auth-step-landing" class="auth-landing">
+                        <div class="auth-landing-topbar">
+                            <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                                <polygon points="20,80 170,30 80,110" fill="#111111" fill-opacity="0.75" />
+                                <polygon points="120,180 170,30 80,110" fill="#111111" />
+                                <polygon points="20,80 80,110 80,140" fill="#111111" fill-opacity="0.55" />
+                            </svg>
+                            <span>HABA DRIVER</span>
+                        </div>
+                        <div class="auth-landing-body">
+                            <h2>Turn your drive time into income</h2>
+                            <ul class="auth-landing-checklist">
+                                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Get matched with nearby Haba Ride requests</li>
+                                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> See the fare before you accept</li>
+                                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Go online and offline whenever you want</li>
+                            </ul>
+                        </div>
+                        <div class="auth-landing-actions">
+                            <button type="button" id="btn-landing-login" class="auth-landing-btn-row">
+                                Log in to drive
+                                <span class="auth-landing-arrow-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+                            </button>
+                            <button type="button" id="btn-landing-signup" class="auth-landing-btn-row">
+                                Become a driver
+                                <span class="auth-landing-arrow-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ── EMAIL SIGN IN / SIGN UP STEP ── -->
+                    <div id="auth-step-email" style="display:none;">
+                        <button type="button" id="btn-email-back-to-landing" class="auth-step-back-btn" aria-label="Back">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+                        </button>
+                        <h2 id="auth-email-heading">Sign in</h2>
+                        <p id="auth-email-subtitle">Enter your driver account email and password</p>
+
+                        <div class="input-group">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+                            <input type="email" id="auth-email" class="pill-input" placeholder="Email address" autocomplete="email">
+                        </div>
+                        <div class="input-group">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            <input type="password" id="auth-email-password" class="pill-input" placeholder="Password" autocomplete="current-password" minlength="6">
+                        </div>
+
+                        <div class="error-text" id="auth-error"></div>
+                        <button type="button" id="btn-email-auth-submit" class="btn-pill btn-primary">Sign In</button>
+                        <p class="toggle-auth"><span id="btn-toggle-email-mode">Don't have a driver account? Sign up</span></p>
                     </div>
                 </div>
-                <div class="field">
-                    <label for="ob-model">Vehicle model</label>
-                    <input type="text" id="ob-model" placeholder="e.g. Toyota Corolla" required>
-                </div>
-                <div class="field">
-                    <label for="ob-color">Vehicle color</label>
-                    <input type="text" id="ob-color" placeholder="e.g. White" required>
-                </div>
-                <div class="field">
-                    <label for="ob-plate">License plate</label>
-                    <input type="text" id="ob-plate" placeholder="e.g. CA 123-456" required>
-                </div>
-                <div class="error-text" id="onboarding-error"></div>
-                <button type="submit" class="btn-primary">Save &amp; continue</button>
-            </form>
+            </div>
         </div>
+    </div>
 
-        <!-- ═══ DASHBOARD ═══ -->
-        <div id="screen-dashboard" class="screen">
-            <header class="dash-header">
-                <div class="dash-title-row">
-                    <span class="brand">Haba<span class="brand-dot">.</span></span>
-                    <span class="dash-title-sub">Driver</span>
+    <!-- ═══ VEHICLE ONBOARDING (first sign-up only) ═══ -->
+    <div id="onboarding-screen" style="display:none; position: fixed; inset: 0; z-index: 9998; background: var(--bg-base); overflow-y: auto;">
+        <div class="auth-card-stack" style="max-width: 420px; margin: 0 auto; padding: 40px 24px 60px;">
+            <div class="auth-card">
+
+                <!-- Step 1: vehicle type -->
+                <div id="ob-step-vehicle">
+                    <h2>What do you drive?</h2>
+                    <p>Riders are matched to your vehicle type</p>
+                    <div class="account-type-choices" id="ob-vehicle-type">
+                        <button type="button" class="account-type-card selected" data-type="car">
+                            <span class="account-type-card-icon"><img src="https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png" alt="Car"></span>
+                            <span class="account-type-card-body"><span class="account-type-card-title">Car</span><span class="account-type-card-sub">Affordable, everyday rides · 4 seats</span></span>
+                            <span class="account-type-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+                        </button>
+                        <button type="button" class="account-type-card" data-type="bike">
+                            <span class="account-type-card-icon"><img src="https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png" alt="Bike"></span>
+                            <span class="account-type-card-body"><span class="account-type-card-title">Bike</span><span class="account-type-card-sub">Quick trips through traffic · 1 seat</span></span>
+                            <span class="account-type-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+                        </button>
+                        <button type="button" class="account-type-card" data-type="scoot">
+                            <span class="account-type-card-icon"><img src="https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png" alt="Scoot"></span>
+                            <span class="account-type-card-body"><span class="account-type-card-title">Scoot</span><span class="account-type-card-sub">Short hops, lowest cost · 1 seat</span></span>
+                            <span class="account-type-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+                        </button>
+                        <button type="button" class="account-type-card" data-type="womandrive">
+                            <span class="account-type-card-icon"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#E5148C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M8.5 18h7"/></svg></span>
+                            <span class="account-type-card-body"><span class="account-type-card-title">Woman Drive Woman</span><span class="account-type-card-sub">Women-only rides · 4 seats</span></span>
+                            <span class="account-type-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+                        </button>
+                    </div>
+                    <button type="button" id="btn-ob-vehicle-continue" class="btn-pill btn-primary" style="margin-top:22px;">Continue</button>
                 </div>
-                <button class="icon-btn" id="btn-signout" title="Sign out">⏻</button>
+
+                <!-- Step 2: driver + vehicle details -->
+                <div id="ob-step-details" style="display:none;">
+                    <button type="button" id="btn-ob-details-back" class="auth-step-back-btn" aria-label="Back">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+                    </button>
+                    <h2>Set up your driver profile</h2>
+                    <p>Riders will see this once you accept their trip</p>
+                    <form id="form-onboarding-details">
+                        <div class="input-group">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                            <input type="text" id="ob-name" class="pill-input" placeholder="Full name" required>
+                        </div>
+                        <div class="input-group">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                            <input type="url" id="ob-photo" class="pill-input" placeholder="Photo URL (optional)">
+                        </div>
+                        <div class="input-group">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h2"></path><circle cx="6.5" cy="16.5" r="2.5"></circle><circle cx="16.5" cy="16.5" r="2.5"></circle></svg>
+                            <input type="text" id="ob-model" class="pill-input" placeholder="Vehicle model (e.g. Toyota Corolla)" required>
+                        </div>
+                        <div class="input-group">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>
+                            <input type="text" id="ob-color" class="pill-input" placeholder="Vehicle color" required>
+                        </div>
+                        <div class="input-group">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"></rect><path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"></path></svg>
+                            <input type="text" id="ob-plate" class="pill-input" placeholder="License plate" required>
+                        </div>
+                        <div class="error-text" id="onboarding-error"></div>
+                        <button type="submit" class="btn-pill btn-primary">Save &amp; start driving</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ APP SHELL / DASHBOARD ═══ -->
+    <div id="app-shell">
+        <div class="app-viewport">
+            <header class="dash-header">
+                <div class="dash-header-brand">
+                    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                        <polygon points="20,80 170,30 80,110" fill="#111111" fill-opacity="0.75" />
+                        <polygon points="120,180 170,30 80,110" fill="#111111" />
+                        <polygon points="20,80 80,110 80,140" fill="#111111" fill-opacity="0.55" />
+                    </svg>
+                    <span class="brand-word">HABA</span>
+                    <span class="brand-tag">Driver</span>
+                </div>
+                <button class="icon-btn" id="btn-signout" title="Sign out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                </button>
             </header>
 
             <div class="online-toggle-row">
@@ -368,7 +487,7 @@
                     <div><span id="trip-duration">--</span> min</div>
                     <div><span id="trip-seats">--</span> seats</div>
                 </div>
-                <button class="btn-primary" id="btn-trip-advance">Mark as arrived</button>
+                <button class="btn-pill btn-primary" id="btn-trip-advance">Mark as arrived</button>
                 <button class="btn-danger-outline" id="btn-trip-cancel">Cancel trip</button>
             </div>
 
@@ -376,7 +495,6 @@
                 Today: <strong id="earnings-today">R0.00</strong> · <span id="trips-today">0</span> trip<span id="trips-today-plural">s</span>
             </div>
         </div>
-
     </div>
 
     <script type="module">
@@ -407,14 +525,19 @@
         const DEFAULT_AVATAR = 'data:image/svg+xml,' + encodeURIComponent(
             `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" fill="#F0F2F5"/><circle cx="24" cy="18" r="8" fill="#C7C9D1"/><path d="M8 42c0-9 7-14 16-14s16 5 16 14" fill="#C7C9D1"/></svg>`
         );
-
+        const RIDE_TYPE_ICON_URL = {
+            car: 'https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png',
+            bike: 'https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png',
+            scoot: 'https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png',
+            womandrive: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#E5148C"/><circle cx="16" cy="12" r="6" fill="none" stroke="#ffffff" stroke-width="2"/><path d="M16 18v7M12.5 22h7" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/></svg>`)
+        };
         const RIDE_TYPE_LABEL = { car: 'Car', bike: 'Bike', scoot: 'Scoot', womandrive: 'Woman Drive Woman' };
         const HABA_DRIVER_SEARCH_RADIUS_KM = 15;
         const ACTIVE_STATUSES = ['accepted', 'arriving', 'in_progress'];
 
         // ── State ─────────────────────────────────────────────────────────────
         let currentUser = null;
-        let driverProfile = null;   // driver_profiles/{uid}
+        let driverProfile = null;
         let vehicleType = 'car';
         let isOnline = false;
         let watchId = null;
@@ -428,12 +551,10 @@
         let earningsToday = 0;
         let tripsToday = 0;
 
-        // Map (optional — degrades quietly if the Maps key/function isn't available)
         let map = null, mapsLoadPromise = null, cachedMapsKey = null;
         let driverMapMarker = null, pickupMapMarker = null, dropoffMapMarker = null;
         let directionsService = null, directionsRenderer = null;
 
-        // ── Small utilities ──────────────────────────────────────────────────
         function $(id) { return document.getElementById(id); }
 
         function notify(message, type = 'info') {
@@ -453,53 +574,79 @@
             return R * 2 * Math.asin(Math.sqrt(h));
         }
 
-        function showScreen(id) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            $(id).classList.add('active');
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
 
-        function setLoading(on) { $('loading-screen').style.display = on ? 'flex' : 'none'; }
+        // ── Splash ────────────────────────────────────────────────────────────
+        function hideSplash() {
+            const mark = $('splash-mark');
+            mark.classList.add('splash-exit');
+            requestAnimationFrame(() => requestAnimationFrame(() => mark.classList.add('splash-exit-run')));
+            setTimeout(() => { $('loading-overlay').classList.add('hidden'); }, 420);
+        }
 
-        // ── Auth screen ───────────────────────────────────────────────────────
+        // ── Auth screen: landing / sign-in / sign-up ─────────────────────────────
         let authMode = 'signin';
-        document.querySelectorAll('#screen-auth .tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                authMode = btn.dataset.mode;
-                document.querySelectorAll('#screen-auth .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-                $('btn-auth-submit').textContent = authMode === 'signin' ? 'Sign in' : 'Create account';
-                $('auth-error').textContent = '';
-            });
-        });
+        function showAuthStep(step) {
+            $('auth-step-landing').style.display = step === 'landing' ? '' : 'none';
+            $('auth-step-email').style.display = step === 'email' ? '' : 'none';
+            $('auth-error').textContent = '';
+        }
+        function setAuthMode(mode) {
+            authMode = mode;
+            $('auth-email-heading').textContent = mode === 'signin' ? 'Sign in' : 'Become a driver';
+            $('auth-email-subtitle').textContent = mode === 'signin'
+                ? 'Enter your driver account email and password'
+                : 'Create a driver account with your email and a password';
+            $('btn-email-auth-submit').textContent = mode === 'signin' ? 'Sign In' : 'Create account';
+            $('btn-toggle-email-mode').textContent = mode === 'signin'
+                ? "Don't have a driver account? Sign up"
+                : 'Already drive with Haba? Sign in';
+        }
 
-        $('form-auth').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        $('btn-landing-login').addEventListener('click', () => { setAuthMode('signin'); showAuthStep('email'); });
+        $('btn-landing-signup').addEventListener('click', () => { setAuthMode('signup'); showAuthStep('email'); });
+        $('btn-email-back-to-landing').addEventListener('click', () => showAuthStep('landing'));
+        $('btn-toggle-email-mode').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
+
+        $('btn-email-auth-submit').addEventListener('click', async () => {
             const email = $('auth-email').value.trim();
-            const password = $('auth-password').value;
+            const password = $('auth-email-password').value;
             const errorEl = $('auth-error');
-            const submitBtn = $('btn-auth-submit');
+            const submitBtn = $('btn-email-auth-submit');
             errorEl.textContent = '';
+            if (!email || !password) { errorEl.textContent = 'Enter an email and password.'; return; }
             submitBtn.disabled = true;
             submitBtn.textContent = 'Please wait…';
             try {
                 if (authMode === 'signin') {
                     await signInWithEmailAndPassword(auth, email, password);
                 } else {
-                    await createUserWithEmailAndPassword(auth, email, password);
+                    const cred = await createUserWithEmailAndPassword(auth, email, password);
+                    // Driver signups are logged on their OWN node — never written into the
+                    // rider app's `users/{uid}` tree, so driver accounts stay out of the
+                    // rider directory entirely.
+                    await set(ref(database, `driver_signups/${cred.user.uid}`), {
+                        email, createdAt: serverTimestamp(), role: 'driver'
+                    });
                 }
                 // onAuthStateChanged takes it from here.
             } catch (err) {
                 errorEl.textContent = friendlyAuthError(err);
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.textContent = authMode === 'signin' ? 'Sign in' : 'Create account';
+                submitBtn.textContent = authMode === 'signin' ? 'Sign In' : 'Create account';
             }
         });
 
         function friendlyAuthError(err) {
             const code = err && err.code || '';
             if (code.includes('wrong-password') || code.includes('invalid-credential')) return 'Incorrect email or password.';
-            if (code.includes('user-not-found')) return 'No account with that email. Try "Create account".';
-            if (code.includes('email-already-in-use')) return 'That email already has an account. Try "Sign in".';
+            if (code.includes('user-not-found')) return 'No driver account with that email yet.';
+            if (code.includes('email-already-in-use')) return 'That email already has an account. Try signing in.';
             if (code.includes('weak-password')) return 'Password should be at least 6 characters.';
             if (code.includes('invalid-email')) return 'That email address looks invalid.';
             return 'Something went wrong — please try again.';
@@ -512,16 +659,27 @@
             await signOut(auth);
         });
 
-        // ── Onboarding screen ─────────────────────────────────────────────────
+        // ── Vehicle onboarding ───────────────────────────────────────────────
         let obVehicleType = 'car';
-        document.querySelectorAll('#ob-vehicle-type .vtype-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                obVehicleType = btn.dataset.type;
-                document.querySelectorAll('#ob-vehicle-type .vtype-btn').forEach(b => b.classList.toggle('active', b === btn));
+        document.querySelectorAll('#ob-vehicle-type .account-type-card').forEach(card => {
+            card.addEventListener('click', () => {
+                obVehicleType = card.dataset.type;
+                document.querySelectorAll('#ob-vehicle-type .account-type-card').forEach(c => {
+                    c.classList.toggle('selected', c === card);
+                    c.classList.toggle('womandrive-selected', c === card && c.dataset.type === 'womandrive');
+                });
             });
         });
+        $('btn-ob-vehicle-continue').addEventListener('click', () => {
+            $('ob-step-vehicle').style.display = 'none';
+            $('ob-step-details').style.display = '';
+        });
+        $('btn-ob-details-back').addEventListener('click', () => {
+            $('ob-step-details').style.display = 'none';
+            $('ob-step-vehicle').style.display = '';
+        });
 
-        $('form-onboarding').addEventListener('submit', async (e) => {
+        $('form-onboarding-details').addEventListener('submit', async (e) => {
             e.preventDefault();
             const errorEl = $('onboarding-error');
             errorEl.textContent = '';
@@ -536,13 +694,16 @@
             }
             const profile = { name, photoURL, vehicleModel, vehicleColor, plate, rating: 5.0, vehicleType: obVehicleType };
             try {
+                // driver_profiles + drivers are the two nodes the rider app already reads —
+                // both distinct from driver_signups and from the rider app's own users/ tree.
                 await set(ref(database, `driver_profiles/${currentUser.uid}`), profile);
                 await set(ref(database, `drivers/${currentUser.uid}`), {
                     online: false, lat: null, lng: null, vehicleType: obVehicleType, updatedAt: serverTimestamp()
                 });
                 driverProfile = profile;
                 vehicleType = obVehicleType;
-                enterDashboard();
+                $('onboarding-screen').style.display = 'none';
+                await enterDashboard();
             } catch (err) {
                 console.error('[driver] failed to save profile', err);
                 errorEl.textContent = "Couldn't save your profile — try again.";
@@ -551,7 +712,6 @@
 
         // ── Auth state / bootstrapping ───────────────────────────────────────
         onAuthStateChanged(auth, async (user) => {
-            setLoading(true);
             teardownActiveRideListener();
             teardownIncomingListener();
             if (isOnline) await goOffline(true);
@@ -559,8 +719,11 @@
             if (!user) {
                 currentUser = null;
                 driverProfile = null;
-                showScreen('screen-auth');
-                setLoading(false);
+                $('app-shell').classList.remove('active');
+                $('onboarding-screen').style.display = 'none';
+                showAuthStep('landing');
+                $('auth-screen').classList.add('active');
+                hideSplash();
                 return;
             }
 
@@ -568,25 +731,30 @@
             try {
                 const snap = await get(ref(database, `driver_profiles/${user.uid}`));
                 if (!snap.exists()) {
-                    showScreen('screen-onboarding');
-                    setLoading(false);
+                    $('auth-screen').classList.remove('active');
+                    $('app-shell').classList.remove('active');
+                    $('ob-step-vehicle').style.display = '';
+                    $('ob-step-details').style.display = 'none';
+                    $('onboarding-screen').style.display = 'block';
+                    hideSplash();
                     return;
                 }
                 driverProfile = snap.val();
                 vehicleType = driverProfile.vehicleType || 'car';
+                $('auth-screen').classList.remove('active');
+                $('onboarding-screen').style.display = 'none';
                 await enterDashboard();
             } catch (err) {
                 console.error('[driver] failed to load profile', err);
                 notify("Couldn't load your driver profile.", 'error');
             }
-            setLoading(false);
+            hideSplash();
         });
 
         async function enterDashboard() {
-            showScreen('screen-dashboard');
+            $('app-shell').classList.add('active');
             resetTripUIToIncoming();
             initMap().catch(err => console.error('[driver] map failed to load', err));
-            // Restore an in-progress ride after a refresh/relogin, if one exists.
             await restoreActiveRideIfAny();
         }
 
@@ -603,7 +771,6 @@
                 if (found) {
                     activeRideId = found.id;
                     subscribeActiveRide(found.id);
-                    // If we have an active ride we must already be online — reflect that in the UI.
                     $('online-toggle').checked = true;
                     await goOnline(true);
                 }
@@ -663,7 +830,7 @@
                 driverLng = pos.coords.longitude;
                 update(driverRef, { lat: driverLat, lng: driverLng, updatedAt: serverTimestamp() }).catch(() => {});
                 updateDriverMapMarker();
-                if (!activeRideId) renderIncomingList(); // re-sort by fresh distance
+                if (!activeRideId) renderIncomingList();
             }, (err) => console.error('[driver] geolocation watch error', err), { enableHighAccuracy: true, maximumAge: 5000 });
 
             if (!activeRideId) subscribeIncoming();
@@ -694,16 +861,13 @@
             onValue(q, handler);
             incomingUnsub = () => off(q, 'value', handler);
         }
-
-        function teardownIncomingListener() {
-            if (incomingUnsub) { incomingUnsub(); incomingUnsub = null; }
-        }
+        function teardownIncomingListener() { if (incomingUnsub) { incomingUnsub(); incomingUnsub = null; } }
 
         let lastIncomingSnapshot = [];
         function renderIncomingList(all) {
             if (all) lastIncomingSnapshot = all;
             const list = $('incoming-list');
-            if (activeRideId) return; // trip panel is showing instead
+            if (activeRideId) return;
 
             if (!isOnline) {
                 list.innerHTML = '<p class="empty-msg">Go online to see nearby ride requests.</p>';
@@ -732,9 +896,12 @@
                 const pickupLabel = (d.pickup && d.pickup.label) || 'Pickup';
                 const dropoffLabel = (d.dropoff && d.dropoff.label) || 'Drop-off';
                 const distanceAway = r.distanceToPickup !== null ? `${r.distanceToPickup.toFixed(1)} km away` : '';
+                const iconHtml = d.rideType === 'womandrive'
+                    ? `<img src="${RIDE_TYPE_ICON_URL.womandrive}" alt="">`
+                    : `<img src="${RIDE_TYPE_ICON_URL[d.rideType] || RIDE_TYPE_ICON_URL.car}" alt="">`;
                 return `<div class="ride-card" data-request-id="${r.id}">
                     <div class="ride-card-top">
-                        <span class="ride-type-chip${d.rideType === 'womandrive' ? ' womandrive' : ''}">${RIDE_TYPE_LABEL[d.rideType] || d.rideType}</span>
+                        <span class="ride-type-chip${d.rideType === 'womandrive' ? ' womandrive' : ''}">${iconHtml}${RIDE_TYPE_LABEL[d.rideType] || d.rideType}</span>
                         <span class="ride-price">R${Number(d.price || 0).toFixed(2)}</span>
                     </div>
                     <div class="ride-route"><b>${escapeHtml(pickupLabel)}</b> → ${escapeHtml(dropoffLabel)}</div>
@@ -752,19 +919,13 @@
             });
         }
 
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-
         // ── Accepting a request (transaction — first driver wins) ──────────────
         async function acceptRequest(requestId) {
             const reqRef = ref(database, `ride_requests/${requestId}`);
             let result;
             try {
                 result = await runTransaction(reqRef, (current) => {
-                    if (!current || current.status !== 'requested') return; // abort — already taken/removed
+                    if (!current || current.status !== 'requested') return;
                     current.status = 'accepted';
                     current.driverId = currentUser.uid;
                     current.updatedAt = serverTimestamp();
@@ -792,11 +953,7 @@
             const handler = (snap) => {
                 const request = snap.val();
                 if (!request) { finishActiveRide(); return; }
-                if (request.status === 'completed') {
-                    activeRideData = request;
-                    handleTripCompleted(request);
-                    return;
-                }
+                if (request.status === 'completed') { activeRideData = request; handleTripCompleted(request); return; }
                 if (request.status === 'cancelled') {
                     notify(request.cancelledBy === 'rider' ? 'Rider cancelled the trip.' : 'Trip cancelled.', 'info');
                     finishActiveRide();
@@ -808,10 +965,7 @@
             onValue(reqRef, handler);
             activeRideUnsub = () => off(reqRef, 'value', handler);
         }
-
-        function teardownActiveRideListener() {
-            if (activeRideUnsub) { activeRideUnsub(); activeRideUnsub = null; }
-        }
+        function teardownActiveRideListener() { if (activeRideUnsub) { activeRideUnsub(); activeRideUnsub = null; } }
 
         function renderTripPanel(request) {
             $('panel-incoming').style.display = 'none';
@@ -849,18 +1003,14 @@
             } catch (err) {
                 console.error('[driver] failed to advance trip status', err);
                 notify("Couldn't update the trip — try again.", 'error');
-            } finally {
-                btn.disabled = false;
-            }
+            } finally { btn.disabled = false; }
         });
 
         $('btn-trip-cancel').addEventListener('click', async () => {
             if (!activeRideId) return;
             if (!confirm('Cancel this trip?')) return;
             try {
-                await update(ref(database, `ride_requests/${activeRideId}`), {
-                    status: 'cancelled', cancelledBy: 'driver', updatedAt: serverTimestamp()
-                });
+                await update(ref(database, `ride_requests/${activeRideId}`), { status: 'cancelled', cancelledBy: 'driver', updatedAt: serverTimestamp() });
                 notify('Trip cancelled.', 'info');
             } catch (err) {
                 console.error('[driver] failed to cancel trip', err);
@@ -931,7 +1081,7 @@
             try {
                 await loadGoogleMapsScript();
             } catch (err) {
-                $('map-canvas').outerHTML = ''; // no key configured yet — just hide the map, rest of the app still works
+                $('map-canvas').style.display = 'none';
                 return;
             }
             const center = (driverLat != null) ? { lat: driverLat, lng: driverLng } : { lat: 0, lng: 0 };
@@ -966,7 +1116,7 @@
             clearTripMapOverlays();
             const pickup = request.pickup, dropoff = request.dropoff;
             if (pickup && typeof pickup.lat === 'number') {
-                pickupMapMarker = new google.maps.Marker({ position: { lat: pickup.lat, lng: pickup.lng }, map, label: 'P' });
+                pickupMapMarker = new google.maps.Marker({ position: { lat: pickup.lat, lng: pickup.lng }, map, icon: { url: RIDE_TYPE_ICON_URL[request.rideType] || RIDE_TYPE_ICON_URL.car, scaledSize: new google.maps.Size(28, 28) } });
             }
             if (dropoff && typeof dropoff.lat === 'number') {
                 dropoffMapMarker = new google.maps.Marker({ position: { lat: dropoff.lat, lng: dropoff.lng }, map, label: 'D' });
@@ -978,9 +1128,7 @@
                     origin: { lat: origin.lat, lng: origin.lng },
                     destination: { lat: destination.lat, lng: destination.lng },
                     travelMode: google.maps.TravelMode.DRIVING
-                }, (result, status) => {
-                    if (status === 'OK') directionsRenderer.setDirections(result);
-                });
+                }, (result, status) => { if (status === 'OK') directionsRenderer.setDirections(result); });
             }
         }
     </script>
