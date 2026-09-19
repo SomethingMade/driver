@@ -23,6 +23,15 @@
     }
     *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
     html, body{ height:100%; }
+    /* Long-press anywhere (image save/copy callouts, text-selection bubble, right-click
+       menu) is disabled app-wide — this is a driving tool, not a document, so nothing
+       here needs to be selected/copied/saved via long-press. Inputs/textareas are
+       explicitly re-enabled further down so typing and editing still work normally. */
+    html, body, #app-shell{
+        -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+    }
+    img{ -webkit-user-drag: none; user-drag: none; -webkit-touch-callout: none; pointer-events: none; }
+    input, textarea, select{ -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
     body{ margin:0; font-family:'Inter',sans-serif; background:var(--bg-alt); color:var(--text-primary); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain; }
     #app-shell{ max-width:480px; margin:0 auto; height:100vh; height:100dvh; background:var(--bg-base); display:flex; flex-direction:column; position:relative; overflow:hidden; }
     button, input, select{ font-family:inherit; }
@@ -233,7 +242,7 @@
                 <!-- OFFLINE step -->
                 <div id="step-offline">
                     <div class="haba-ride-hero" id="hero-go-online">
-                        <div class="haba-ride-hero-icon">🚘</div>
+                        <div class="haba-ride-hero-icon" id="hero-go-online-icon"><img src="https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png" alt="" draggable="false"></div>
                         <div class="haba-ride-hero-text">
                             <div class="haba-ride-hero-title">You're offline</div>
                             <div class="haba-ride-hero-sub">Tap to go online and start receiving ride requests</div>
@@ -249,7 +258,7 @@
                 <!-- LIST step: nearby requested rides -->
                 <div id="step-list" style="display:none;">
                     <div class="haba-ride-hero" id="hero-online-status" style="cursor:default;">
-                        <div class="haba-ride-hero-icon">📡</div>
+                        <div class="haba-ride-hero-icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--primary-blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1.6em;height:1.6em;"><circle cx="12" cy="12" r="2"></circle><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"></path></svg></div>
                         <div class="haba-ride-hero-text">
                             <div class="haba-ride-hero-title">You're online</div>
                             <div class="haba-ride-hero-sub" id="online-sub">Looking for nearby ride requests…</div>
@@ -331,12 +340,20 @@ const database = getDatabase(app);
 const functionsClient = getFunctions(app);
 const getGoogleMapsApiKeyCallable = httpsCallable(functionsClient, 'getGoogleMapsApiKey');
 
+// Backstop for the CSS-only long-press/select-none rules above: some mobile browsers
+// still surface a "Save image" / "Copy" callout or context menu on long-press even with
+// -webkit-touch-callout:none, so this catches it at the event level too. Form fields are
+// left alone so typing, selecting, and pasting into inputs still works normally.
+const isFormField = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+document.addEventListener('contextmenu', (e) => { if (!isFormField(e.target)) e.preventDefault(); });
+document.addEventListener('selectstart', (e) => { if (!isFormField(e.target)) e.preventDefault(); });
+
 const DEFAULT_AVATAR_URL = 'https://api.dicebear.com/7.x/initials/svg?seed=Driver&backgroundColor=111111&textColor=ffffff';
 
 const RIDE_ICONS = {
-    car: `<img src="https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png" alt="Car">`,
-    bike: `<img src="https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png" alt="Bike">`,
-    scoot: `<img src="https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png" alt="Scoot">`,
+    car: `<img src="https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png" alt="Car" draggable="false">`,
+    bike: `<img src="https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png" alt="Bike" draggable="false">`,
+    scoot: `<img src="https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png" alt="Scoot" draggable="false">`,
     womandrive: `<svg viewBox="0 0 24 24" fill="none" stroke="#E5148C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M8.5 18h7"/></svg>`
 };
 const RIDE_MARKER_ICON_URLS = {
@@ -550,6 +567,7 @@ function enterApp() {
     document.getElementById('header-avatar').style.backgroundImage = `url('${driverProfile.photoURL || DEFAULT_AVATAR_URL}')`;
     document.getElementById('header-name').textContent = driverProfile.name || 'Driver';
     document.getElementById('header-rating').textContent = `★ ${(driverProfile.rating || 5).toFixed(1)} · ${RIDE_LABELS[driverProfile.vehicleType] || 'Car'}`;
+    document.getElementById('hero-go-online-icon').innerHTML = RIDE_ICONS[driverProfile.vehicleType] || RIDE_ICONS.car;
     document.getElementById('sheet-vehicle').textContent = [driverProfile.vehicleColor, driverProfile.vehicleModel].filter(Boolean).join(' ') || '—';
     document.getElementById('sheet-plate').textContent = driverProfile.plate || '—';
     document.getElementById('sheet-rating').textContent = `★ ${(driverProfile.rating || 5).toFixed(1)}`;
