@@ -402,7 +402,7 @@ function setAuthMode(mode) {
     formSignup.style.display = signinMode ? 'none' : 'block';
     authSwitchText.innerHTML = signinMode
         ? `New driver? <a id="link-to-signup">Sign up</a>`
-        : `Already driving with Haba? <a id="link-to-signin">Sign in</a>`;
+        : `Already have a Haba account? <a id="link-to-signin">Sign in</a> to add driver access`;
     const link = document.getElementById(signinMode ? 'link-to-signup' : 'link-to-signin');
     link.addEventListener('click', () => setAuthMode(signinMode ? 'signup' : 'signin'));
 }
@@ -438,17 +438,37 @@ formSignin.addEventListener('submit', async (e) => {
 formSignup.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('btn-signup');
+    const email = document.getElementById('signup-email').value.trim();
+    const password = document.getElementById('signup-password').value;
+    const name = document.getElementById('signup-name').value.trim();
     btn.disabled = true; btn.textContent = 'Creating account…';
     try {
-        const cred = await createUserWithEmailAndPassword(auth,
-            document.getElementById('signup-email').value.trim(),
-            document.getElementById('signup-password').value);
-        await updateProfile(cred.user, { displayName: document.getElementById('signup-name').value.trim() || 'Driver' });
-        // Marks this uid as mid-signup so onAuthStateChanged lets it through to vehicle
-        // onboarding — without this marker, an account with no driver_profiles is rejected
-        // (see onAuthStateChanged below), which is what keeps rider-only accounts out.
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        if (name) await updateProfile(cred.user, { displayName: name });
+        // Optional audit trail only — NOT used to gate access anymore (see
+        // onAuthStateChanged below). One Haba identity can be both a rider and a
+        // driver, so the only thing that actually decides "is this person a
+        // driver" is whether driver_profiles/{uid} exists.
         await set(ref(database, `driver_signup_pending/${cred.user.uid}`), { createdAt: serverTimestamp() });
-    } catch (err) { showAuthError(err); }
+    } catch (err) {
+        if (err.code === 'auth/email-already-in-use') {
+            // This email already has a Haba account (rider, driver, or both) — one
+            // identity, optional roles. Try signing them into it with the password
+            // they just typed, rather than dead-ending them.
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                // onAuthStateChanged takes it from here: existing driver -> app,
+                // existing rider-only account -> onboarding to add driver access.
+            } catch (signInErr) {
+                document.getElementById('signin-email').value = email;
+                setAuthMode('signin');
+                authError.textContent = 'This email already has a Haba account, but that password didn\'t match it. Sign in with your existing password to add driver access.';
+                authError.style.display = 'block';
+            }
+        } else {
+            showAuthError(err);
+        }
+    }
     finally { btn.disabled = false; btn.textContent = 'Create driver account'; }
 });
 
@@ -498,11 +518,14 @@ const declinedIds = new Set();
 const allRequestedRides = {};
 
 // ── Auth state ─────────────────────────────────────────────────────────
-// Driver-only gate: an account only gets in if it already has a
-// driver_profiles/{uid} record, or is mid-signup (driver_signup_pending/{uid},
-// written the moment a new account is created via the form above). Any other
-// account — including an existing Haba rider with no driver history — is
-// signed back out with an explanation rather than funneled into onboarding.
+// One Haba identity, optional roles: any signed-in account is welcome here,
+// whether it originally signed up as a rider, a driver, or both. The only
+// thing that decides what screen they land on is whether driver_profiles/{uid}
+// already exists — no separate "is this a driver account" gate. A rider
+// opening this app for the first time just gets routed into vehicle
+// onboarding to add driver access, using the exact same login they already
+// have. This intentionally never checks driver_signup_pending as a gate —
+// that node is now just an optional audit trail written at signup.
 onAuthStateChanged(auth, async (user) => {
     if (!user) { driverProfile = null; showScreen('auth'); return; }
     showScreen('loading');
@@ -511,17 +534,11 @@ onAuthStateChanged(auth, async (user) => {
         if (profileSnap.exists()) {
             driverProfile = profileSnap.val();
             enterApp();
-            return;
-        }
-        const pendingSnap = await get(ref(database, `driver_signup_pending/${user.uid}`));
-        if (pendingSnap.exists()) {
+        } else {
+            // No driver profile yet on this uid — could be a brand-new signup or an
+            // existing Haba rider adding driver access. Either way: onboarding.
             showScreen('onboarding');
-            return;
         }
-        await signOut(auth);
-        setAuthMode('signin');
-        authError.textContent = "This account isn't registered as a driver. Use Sign up to register as a new driver.";
-        authError.style.display = 'block';
     } catch (err) {
         notify("Couldn't load your driver profile.");
         showScreen('auth');
