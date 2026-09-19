@@ -99,6 +99,12 @@
     .verify-consent input{ margin-top:2px; flex-shrink:0; }
     .verify-consent label{ font-size:12.5px; line-height:1.45; font-weight:500; color:var(--text-secondary); }
     .verify-consent a{ color:var(--primary-blue); font-weight:700; }
+    .verify-status-row{ display:flex; align-items:center; justify-content:space-between; padding:2px 0 14px; font-size:13.5px; font-weight:700; }
+    .verify-chip{ font-size:11px; font-weight:800; padding:4px 10px; border-radius:20px; background:var(--bg-input); color:var(--text-secondary); }
+    .verify-chip.ok{ background:rgba(52,199,89,0.14); color:var(--success-green); }
+    .verify-chip.bad{ background:rgba(255,69,58,0.12); color:var(--danger-red); }
+    .verify-chip.warn{ background:rgba(255,159,10,0.15); color:#C77700; }
+    .verify-chip.info{ background:rgba(10,132,255,0.12); color:#0A72E0; }
 
     /* ── Loading ─────────────────────────────────────────────────────── */
     #screen-loading{ flex:1; display:flex; align-items:center; justify-content:center; }
@@ -334,11 +340,24 @@
                 </div>
                 <div class="verify-title" id="verify-title"></div>
                 <div class="verify-text" id="verify-text"></div>
-                <div class="checkbox-row verify-consent" id="verify-consent-row">
-                    <input type="checkbox" id="verify-consent">
-                    <label for="verify-consent">I agree that Haba and Didit, our verification provider, may process my ID and selfie to verify me. See Didit's <a href="https://didit.me/terms/verification-privacy-notice" target="_blank" rel="noopener">privacy notice</a>.</label>
+
+                <div id="verify-form-step">
+                    <div class="field"><label>Full legal name</label><input type="text" id="verify-name" autocomplete="name"></div>
+                    <div class="field"><label>Email (optional)</label><input type="email" id="verify-email" autocomplete="email"></div>
+                    <div class="field"><label>ID or passport number</label><input type="text" id="verify-id-number" autocomplete="off"></div>
+                    <div class="checkbox-row verify-consent">
+                        <input type="checkbox" id="verify-consent">
+                        <label for="verify-consent">I agree that Haba and Didit, our verification provider, may process my ID and selfie to verify me. See Didit's <a href="https://didit.me/terms/verification-privacy-notice" target="_blank" rel="noopener">privacy notice</a>.</label>
+                    </div>
+                    <button type="button" class="btn-primary" id="btn-verify-start" style="margin-top:0;">Start verification</button>
                 </div>
-                <button type="button" class="btn-primary" id="btn-verify" style="margin-top:0;"></button>
+
+                <div id="verify-status-step" style="display:none;">
+                    <div class="verify-status-row"><span>Status</span><span class="verify-chip" id="verify-chip">—</span></div>
+                    <button type="button" class="btn-primary" id="btn-verify-continue" style="margin-top:0;">Continue verification</button>
+                    <button type="button" class="btn-ghost" id="btn-verify-recheck" style="margin-top:10px;">Check status</button>
+                    <div class="field-hint" style="text-align:center; margin-top:12px;">Verification opens in a new tab. Come back here when you're done. This page updates on its own.</div>
+                </div>
             </div>
 
             <form id="form-onboarding" style="display:none; margin-top:22px;">
@@ -484,6 +503,7 @@ import {
     runTransaction, onDisconnect
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
+import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 // Same Firebase project as the main Haba app — drivers and riders share one
 // Realtime Database (ride_requests/{id}, driver_profiles/{uid}, drivers/{uid}),
@@ -501,9 +521,11 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const database = getDatabase(app);
 const functionsClient = getFunctions(app);
+const firestoreDb = getFirestore(app);
 const getGoogleMapsApiKeyCallable = httpsCallable(functionsClient, 'getGoogleMapsApiKey');
-const createDriverVerificationCallable = httpsCallable(functionsClient, 'createDriverVerification');
-const refreshDriverVerificationCallable = httpsCallable(functionsClient, 'refreshDriverVerification');
+// Same Didit/Latch cloud functions the main Haba app uses for Haba Verification.
+const startBusinessVerificationCallable = httpsCallable(functionsClient, 'startBusinessVerification');
+const refreshBusinessVerificationCallable = httpsCallable(functionsClient, 'refreshBusinessVerification');
 
 // Backstop for the CSS-only long-press/select-none rules above: some mobile browsers
 // still surface a "Save image" / "Copy" callout or context menu on long-press even with
@@ -658,57 +680,81 @@ formSignup.addEventListener('submit', async (e) => {
     finally { btn.disabled = false; btn.textContent = 'Create driver account'; }
 });
 
-// ── Identity verification (Didit) ─────────────────────────────────────
-// Onboarding is now two steps: 1) verify identity, 2) vehicle details. The Didit session is
-// created server-side (createDriverVerification) and the result arrives via a signed webhook,
-// which writes driver_verifications/{uid}. The client only ever *reads* that node — the SDK's
-// onComplete result is treated as a hint, never as proof. Database rules enforce the gate.
-const DIDIT_SDK_SRC = 'https://unpkg.com/@didit-protocol/sdk-web@0.3.1/dist/didit-sdk.umd.min.js';
-const VERIFY_COPY = {
-    not_started: { title: 'Verify your identity', text: "Riders trust Haba because every driver is checked. You'll scan your ID document and take a selfie. It takes about 2 minutes.", cta: 'Start verification', consent: true },
-    in_progress: { title: 'Finish your verification', text: "You started verifying but didn't finish. Pick up where you left off.", cta: 'Continue verification', consent: false },
-    resubmit:    { title: 'One more try', text: 'We need a clearer photo or scan for part of your verification. Continue to fix it.', cta: 'Continue verification', consent: false },
-    in_review:   { title: 'Your verification is in review', text: "We're checking your details. The next step unlocks as soon as you're approved. You can close the app and come back.", cta: 'Check status', consent: false },
-    declined:    { title: "We couldn't verify you", text: "Your ID or selfie didn't pass. Use a valid, undamaged ID in good light, then try again.", cta: 'Try again', consent: true },
-    expired:     { title: 'Your session expired', text: 'Start a new verification to continue.', cta: 'Start verification', consent: true }
+// ── Identity verification (Didit, same cloud functions as the main Haba app) ──
+// startBusinessVerification / refreshBusinessVerification create and reconcile the Didit
+// session, and the diditWebhook writes the outcome to Firestore businessVerifications/{uid}
+// ({ status, url }). This screen only reads that doc. Only "Approved" unlocks vehicle setup.
+const RESTART_STATUSES = new Set(['Declined', 'Expired', 'Kyc Expired', 'Abandoned']);
+const VERIFY_STATUS_UI = {
+    'Approved':    { label: 'Approved', cls: 'ok' },
+    'Declined':    { label: 'Declined', cls: 'bad' },
+    'In Review':   { label: 'In review', cls: 'warn' },
+    'In Progress': { label: 'In progress', cls: 'info' },
+    'Resubmitted': { label: 'Needs another try', cls: 'warn' }
 };
-VERIFY_COPY.abandoned = VERIFY_COPY.not_started;
 
 const obVerifyCard = document.getElementById('ob-verify');
 const obOnboardingForm = document.getElementById('form-onboarding');
-const btnVerify = document.getElementById('btn-verify');
+const verifyFormStep = document.getElementById('verify-form-step');
+const verifyStatusStep = document.getElementById('verify-status-step');
+const btnVerifyStart = document.getElementById('btn-verify-start');
+const btnVerifyContinue = document.getElementById('btn-verify-continue');
+const btnVerifyRecheck = document.getElementById('btn-verify-recheck');
 const verifyConsent = document.getElementById('verify-consent');
-const verifyConsentRow = document.getElementById('verify-consent-row');
 const obError = document.getElementById('onboarding-error');
-let verificationStatus = null;
+let verificationDoc = null;   // { status, url } from Firestore, or null when never started
 let verifyBusy = false;
 let verifyUnsub = null;
 
 function showObError(msg) { obError.textContent = msg; obError.style.display = 'block'; }
 function clearObError() { obError.style.display = 'none'; }
+const isVerified = () => !!(verificationDoc && verificationDoc.status === 'Approved');
 
-function syncVerifyButton() {
-    const copy = VERIFY_COPY[verificationStatus] || VERIFY_COPY.not_started;
-    verifyConsentRow.style.display = copy.consent ? 'flex' : 'none';
-    btnVerify.textContent = verifyBusy ? 'One moment…' : copy.cta;
-    btnVerify.disabled = verifyBusy || (copy.consent && !verifyConsent.checked);
+function syncVerifyButtons() {
+    btnVerifyStart.textContent = verifyBusy ? 'Starting…' : 'Start verification';
+    btnVerifyStart.disabled = verifyBusy || !verifyConsent.checked;
+    btnVerifyRecheck.disabled = verifyBusy;
+    btnVerifyContinue.disabled = verifyBusy;
 }
-verifyConsent.addEventListener('change', syncVerifyButton);
+verifyConsent.addEventListener('change', syncVerifyButtons);
 
-function renderVerification(status) {
-    verificationStatus = status;
-    const approved = status === 'approved';
+function renderVerification(data) {
+    verificationDoc = data || null;
+    const status = verificationDoc && verificationDoc.status;
+    const approved = status === 'Approved';
     obVerifyCard.style.display = approved ? 'none' : 'block';
     obOnboardingForm.style.display = approved ? 'block' : 'none';
     document.getElementById('ob-sub').textContent = approved ? 'Set up your vehicle' : 'Verify your identity';
     document.getElementById('ob-step-2').classList.toggle('on', approved);
-    if (!approved) {
-        const copy = VERIFY_COPY[status] || VERIFY_COPY.not_started;
-        obVerifyCard.classList.toggle('declined', status === 'declined');
-        document.getElementById('verify-title').textContent = copy.title;
-        document.getElementById('verify-text').textContent = copy.text;
-        syncVerifyButton();
+    if (approved) return;
+
+    const restart = !status || RESTART_STATUSES.has(status);
+    verifyFormStep.style.display = restart ? 'block' : 'none';
+    verifyStatusStep.style.display = restart ? 'none' : 'block';
+    obVerifyCard.classList.toggle('declined', status === 'Declined');
+
+    const title = document.getElementById('verify-title');
+    const text = document.getElementById('verify-text');
+    if (restart) {
+        title.textContent = status === 'Declined' ? "We couldn't verify you" : 'Verify your identity';
+        text.textContent = status === 'Declined'
+            ? "Your last attempt was declined. Check your details, use a valid ID in good light, then start again."
+            : "Riders trust Haba because every driver is checked. You'll scan your ID document and take a selfie. It takes about 2 minutes.";
+        const u = auth.currentUser;
+        const nameEl = document.getElementById('verify-name'), emailEl = document.getElementById('verify-email');
+        if (u && !nameEl.value && u.displayName) nameEl.value = u.displayName;
+        if (u && !emailEl.value && u.email) emailEl.value = u.email;
+    } else {
+        const ui = VERIFY_STATUS_UI[status] || { label: status, cls: '' };
+        const chip = document.getElementById('verify-chip');
+        chip.textContent = ui.label;
+        chip.className = 'verify-chip ' + ui.cls;
+        title.textContent = status === 'In Review' ? 'Your verification is in review' : 'Finish your verification';
+        text.textContent = status === 'In Review'
+            ? "We're checking your details. The next step unlocks as soon as you're approved."
+            : "Continue in Didit's secure flow, then come back here.";
     }
+    syncVerifyButtons();
 }
 
 // Resolves after the first snapshot so the screen never flashes the wrong step.
@@ -717,62 +763,68 @@ function watchVerification(uid) {
         stopWatchingVerification();
         let first = true;
         const done = () => { if (first) { first = false; resolve(); } };
-        verifyUnsub = onValue(ref(database, `driver_verifications/${uid}`), (snap) => {
-            const v = snap.val();
-            renderVerification(v && v.status ? v.status : 'not_started');
+        verifyUnsub = onSnapshot(doc(firestoreDb, 'businessVerifications', uid), (snap) => {
+            renderVerification(snap.exists() ? snap.data() : null);
             done();
         }, (err) => {
             console.warn('[haba-driver] verification watch failed', err);
-            renderVerification('not_started');
+            renderVerification(null);
             done();
         });
     });
 }
 function stopWatchingVerification() { if (verifyUnsub) { verifyUnsub(); verifyUnsub = null; } }
 
-function loadDiditSdk() {
-    if (window.DiditSDK && window.DiditSDK.DiditSdk) return Promise.resolve(window.DiditSDK.DiditSdk);
-    return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = DIDIT_SDK_SRC;
-        s.onload = () => (window.DiditSDK && window.DiditSDK.DiditSdk) ? resolve(window.DiditSDK.DiditSdk) : reject(new Error('Verification tool unavailable.'));
-        s.onerror = () => { s.remove(); reject(new Error("Couldn't load the verification tool. Check your connection and try again.")); };
-        document.head.appendChild(s);
-    });
-}
-
-async function refreshVerification() {
-    const { data } = await refreshDriverVerificationCallable();
-    return data && data.status;
-}
-
-btnVerify.addEventListener('click', async () => {
+btnVerifyStart.addEventListener('click', async () => {
     if (verifyBusy) return;
     clearObError();
-    verifyBusy = true; syncVerifyButton();
+    const fullName = document.getElementById('verify-name').value.trim();
+    const email = document.getElementById('verify-email').value.trim();
+    const idNumber = document.getElementById('verify-id-number').value.trim();
+    if (!fullName) { showObError('Your full legal name is required.'); return; }
+    if (!idNumber) { showObError('An ID or passport number is required.'); return; }
+    verifyBusy = true; syncVerifyButtons();
     try {
-        if (verificationStatus === 'in_review') {
-            const status = await refreshVerification();
-            if (status === 'in_review') notify("Still in review. We'll unlock the next step once you're approved.");
-            return;
-        }
-        const { data } = await createDriverVerificationCallable();
-        if (data.status === 'approved' || data.status === 'in_review' || !data.url) return; // listener updates the screen
-        const DiditSdk = await loadDiditSdk();
-        DiditSdk.shared.onComplete = (result) => {
-            if (result.type === 'failed') {
-                showObError((result.error && result.error.message) || 'Verification failed. Try again.');
-            } else if (result.type === 'completed') {
-                // Hint only. Ask the server to reconcile with Didit in case the webhook is slow.
-                refreshVerification().catch(() => {});
-            }
-        };
-        DiditSdk.shared.startVerification({ url: data.url, configuration: { closeModalOnComplete: true } });
+        const result = await startBusinessVerificationCallable({ fullName, email: email || undefined, idNumber });
+        const url = result.data && result.data.url;
+        renderVerification({ status: (result.data && result.data.status) || 'Not Started', url });
+        // If the browser blocks this pop-up, "Continue verification" opens the same link.
+        if (url) window.open(url, '_blank', 'noopener');
     } catch (err) {
         showObError(err.message || "Couldn't start verification. Try again.");
     } finally {
-        verifyBusy = false; syncVerifyButton();
+        verifyBusy = false; syncVerifyButtons();
     }
+});
+
+btnVerifyContinue.addEventListener('click', () => {
+    if (verificationDoc && verificationDoc.url) window.open(verificationDoc.url, '_blank', 'noopener');
+    else showObError("Couldn't find your verification link. Tap Check status.");
+});
+
+async function recheckVerification(silent) {
+    if (verifyBusy) return;
+    verifyBusy = true; syncVerifyButtons();
+    if (!silent) btnVerifyRecheck.textContent = 'Checking…';
+    try {
+        const result = await refreshBusinessVerificationCallable();
+        const status = result.data && result.data.status;
+        if (status && (!verificationDoc || status !== verificationDoc.status)) {
+            renderVerification({ ...(verificationDoc || {}), status });
+        } else if (!silent && status && status !== 'Approved') {
+            notify(status === 'In Review' ? "Still in review. We'll unlock the next step once you're approved." : 'No change yet.');
+        }
+    } catch (err) {
+        if (!silent) notify(err.message || "Couldn't check status right now.");
+    } finally {
+        verifyBusy = false; btnVerifyRecheck.textContent = 'Check status'; syncVerifyButtons();
+    }
+}
+btnVerifyRecheck.addEventListener('click', () => recheckVerification(false));
+
+// Verification runs in another tab, so re-check quietly when the driver comes back.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && verifyUnsub && verifyStatusStep.style.display === 'block') recheckVerification(true);
 });
 
 // ── Vehicle onboarding ────────────────────────────────────────────────
@@ -786,7 +838,7 @@ document.getElementById('form-onboarding').addEventListener('submit', async (e) 
     e.preventDefault();
     const user = auth.currentUser;
     if (!user) return;
-    if (verificationStatus !== 'approved') { showObError('Verify your identity first.'); return; }
+    if (!isVerified()) { showObError('Verify your identity first.'); return; }
     const btn = document.getElementById('btn-onboarding');
     btn.disabled = true; btn.textContent = 'Saving…';
     const vehicleType = obVehicleType.value;
@@ -804,10 +856,7 @@ document.getElementById('form-onboarding').addEventListener('submit', async (e) 
         driverProfile = profile;
         enterApp();
     } catch (err) {
-        // The database rules only allow a new driver profile once verification is approved.
-        showObError(/permission_denied/i.test(`${err.code} ${err.message}`)
-            ? 'Verify your identity first, then add your vehicle.'
-            : (err.message || 'Could not save your details — try again.'));
+        showObError(err.message || 'Could not save your details — try again.');
     } finally { btn.disabled = false; btn.textContent = 'Start driving'; }
 });
 
@@ -834,7 +883,7 @@ const allRequestedRides = {};
 // that node is now just an optional audit trail written at signup.
 onAuthStateChanged(auth, async (user) => {
     stopWatchingVerification();
-    if (!user) { driverProfile = null; verificationStatus = null; showScreen('auth'); return; }
+    if (!user) { driverProfile = null; verificationDoc = null; showScreen('auth'); return; }
     showScreen('loading');
     try {
         const profileSnap = await get(ref(database, `driver_profiles/${user.uid}`));
