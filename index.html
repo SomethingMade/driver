@@ -1,1136 +1,938 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Haba Driver</title>
-    <meta name="theme-color" content="#111111">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' rx='45' fill='%23111111'/%3E%3Cpolygon points='20,80 170,30 80,110' fill='%23FFFFFF' fill-opacity='0.75'/%3E%3Cpolygon points='120,180 170,30 80,110' fill='%23FFFFFF'/%3E%3Cpolygon points='20,80 80,110 80,140' fill='%23FFFFFF' fill-opacity='0.55'/%3E%3C/svg%3E">
-    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' rx='45' fill='%23111111'/%3E%3Cpolygon points='20,80 170,30 80,110' fill='%23FFFFFF' fill-opacity='0.75'/%3E%3Cpolygon points='120,180 170,30 80,110' fill='%23FFFFFF'/%3E%3Cpolygon points='20,80 80,110 80,140' fill='%23FFFFFF' fill-opacity='0.55'/%3E%3C/svg%3E">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Michroma&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111111">
+<title>Haba Driver</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' rx='45' fill='%23111111'/%3E%3Cpolygon points='20,80 170,30 80,110' fill='%23FFFFFF' fill-opacity='0.75'/%3E%3Cpolygon points='120,180 170,30 80,110' fill='%23FFFFFF'/%3E%3Cpolygon points='20,80 80,110 80,140' fill='%23FFFFFF' fill-opacity='0.55'/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Michroma&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --primary-blue: #111111; --primary-rgb: 17, 17, 17;
+        --danger-red: #FF453A; --success-green: #34C759; --womandrive: #E5148C;
+        --font-brand: 'Michroma', sans-serif;
+        --bg-base: #FFFFFF; --bg-surface: #FFFFFF; --bg-alt: #F7F8FA; --bg-hover: #FAFAFA; --bg-input: #F0F2F5;
+        --border-color: #F0F0F0; --text-primary: #111111; --text-secondary: #888888; --text-inverse: #FFFFFF;
+        --radius-pill: 50px;
+        --shadow-soft: 0 10px 25px rgba(0,0,0,0.05);
+        --shadow-elevated: 0 6px 20px rgba(17,17,17,0.07), 0 1px 3px rgba(17,17,17,0.05);
+        --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+        --nav-bar-total: 0px;
+    }
+    *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html, body{ height:100%; }
+    body{ margin:0; font-family:'Inter',sans-serif; background:var(--bg-alt); color:var(--text-primary); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain; }
+    #app-shell{ max-width:480px; margin:0 auto; height:100vh; height:100dvh; background:var(--bg-base); display:flex; flex-direction:column; position:relative; overflow:hidden; }
+    button, input, select{ font-family:inherit; }
 
-    <!--
-      ============================================================================
-      HABA DRIVER — companion app for the Haba Ride rider flow in index.html.
-      Visual system (fonts, brand mark, splash, login/signup layout, pill inputs,
-      X-style flat black/white auth) is copied 1:1 from the rider app so this
-      reads as the same product. See inline notes near each matching block.
+    /* ── Auth / onboarding ───────────────────────────────────────────── */
+    #screen-auth, #screen-onboarding{ flex:1; overflow-y:auto; }
+    .auth-inner{ padding:32px 26px calc(32px + env(safe-area-inset-bottom)); }
+    .brand-mark{ font-family:var(--font-brand); font-size:22px; letter-spacing:1px; color:var(--primary-blue); }
+    .brand-sub{ font-size:14px; color:var(--text-secondary); margin-top:6px; font-weight:600; }
+    .auth-tabs{ display:flex; gap:6px; background:var(--bg-input); border-radius:var(--radius-pill); padding:4px; margin:28px 0 22px; }
+    .auth-tab{ flex:1; border:none; background:transparent; padding:10px 0; border-radius:var(--radius-pill); font-weight:700; font-size:14px; color:var(--text-secondary); cursor:pointer; transition:0.2s var(--ease-smooth); }
+    .auth-tab.active{ background:var(--primary-blue); color:#fff; }
+    .field{ margin-bottom:14px; }
+    .field label{ display:block; font-size:12.5px; font-weight:700; color:var(--text-secondary); margin-bottom:6px; }
+    .field input, .field select{ width:100%; padding:13px 14px; border-radius:14px; border:1.5px solid var(--border-color); background:var(--bg-input); font-size:15px; color:var(--text-primary); outline:none; }
+    .field input:focus, .field select:focus{ border-color:var(--primary-blue); }
+    .row-2{ display:flex; gap:10px; }
+    .row-2 .field{ flex:1; }
+    .btn-primary{ width:100%; padding:15px; border:none; border-radius:var(--radius-pill); background:var(--primary-blue); color:#fff; font-weight:800; font-size:15px; cursor:pointer; margin-top:6px; transition:0.15s; }
+    .btn-primary:active{ transform:scale(0.98); }
+    .btn-primary:disabled{ opacity:0.55; }
+    .btn-ghost{ width:100%; padding:14px; border:1.5px solid var(--border-color); border-radius:var(--radius-pill); background:transparent; color:var(--text-primary); font-weight:700; font-size:14.5px; cursor:pointer; text-align:center; text-decoration:none; display:block; }
+    .auth-switch{ text-align:center; font-size:13.5px; color:var(--text-secondary); margin-top:18px; }
+    .auth-switch a{ color:var(--primary-blue); font-weight:700; text-decoration:none; cursor:pointer; }
+    .auth-error{ background:rgba(255,69,58,0.1); color:#C0392B; font-size:13px; font-weight:600; padding:10px 12px; border-radius:12px; margin-bottom:14px; display:none; }
+    .checkbox-row{ display:flex; align-items:center; gap:10px; padding:4px 2px 2px; }
+    .checkbox-row input{ width:18px; height:18px; accent-color:var(--primary-blue); }
+    .checkbox-row label{ font-size:13.5px; color:var(--text-primary); font-weight:600; margin:0; }
+    .field-hint{ font-size:11.5px; color:var(--text-secondary); margin-top:5px; }
 
-      DATA MODEL — same Firebase project as the rider app, but driver signups are
-      kept on their OWN nodes and never touch the rider app's `users/{uid}` tree:
+    /* ── Loading ─────────────────────────────────────────────────────── */
+    #screen-loading{ flex:1; display:flex; align-items:center; justify-content:center; }
+    .spinner{ width:34px; height:34px; border:3px solid var(--border-color); border-top-color:var(--primary-blue); border-radius:50%; animation:spin 0.8s linear infinite; }
+    @keyframes spin{ to{ transform:rotate(360deg); } }
 
-        driver_signups/{uid}   : { email, createdAt, role: 'driver' }   — written the
-                                  instant a driver account is created (audit trail,
-                                  separate from anything the rider app owns)
-        driver_profiles/{uid}  : { name, photoURL, vehicleModel, vehicleColor,
-                                    plate, rating, vehicleType }         — the public
-                                  profile riders see once matched (rider app already
-                                  reads this path)
-        drivers/{uid}          : { online, lat, lng, vehicleType }      — live
-                                  presence/location (rider app already reads this)
-        ride_requests/{id}     : status machine the rider app writes; this app
-                                  claims + advances it. See handleHabaRideRequestUpdate
-                                  in the rider app's index.html for the contract.
+    /* ── App shell / header ──────────────────────────────────────────── */
+    #screen-app{ display:none; flex:1; flex-direction:column; min-height:0; }
+    header.app-header{ display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border-color); z-index:5; background:var(--bg-surface); flex-shrink:0; }
+    .header-avatar{ width:38px; height:38px; border-radius:50%; background:var(--bg-alt) center/cover no-repeat; flex-shrink:0; border:1.5px solid var(--border-color); cursor:pointer; }
+    .header-id{ flex:1; min-width:0; }
+    .header-name{ font-size:14px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .header-rating{ font-size:11.5px; color:var(--text-secondary); font-weight:600; }
+    .online-switch{ display:flex; align-items:center; gap:8px; }
+    .online-switch-label{ font-size:11.5px; font-weight:800; color:var(--text-secondary); }
+    .toggle{ width:44px; height:26px; border-radius:20px; background:var(--border-color); position:relative; cursor:pointer; transition:0.25s var(--ease-smooth); flex-shrink:0; }
+    .toggle::after{ content:''; position:absolute; width:20px; height:20px; border-radius:50%; background:#fff; top:3px; left:3px; box-shadow:0 1px 3px rgba(0,0,0,0.25); transition:0.25s var(--ease-smooth); }
+    .toggle.on{ background:var(--success-green); }
+    .toggle.on::after{ left:21px; }
 
-      DEPLOYMENT NOTES:
-      1. Needs live Firebase Auth + Realtime Database — host it for real (Firebase
-         Hosting, your own server), it won't work in a sandboxed preview that
-         blocks outbound network calls.
-      2. Add these indexes to your Realtime Database rules (same DB the rider app
-         already uses):
-             "ride_requests": { ".indexOn": ["status", "driverId"] }
-      3. The map reuses the rider app's existing `getGoogleMapsApiKey` Cloud
-         Function — no key is hardcoded here.
-      ============================================================================
-    -->
+    /* ── Map + sheet stage ───────────────────────────────────────────── */
+    .map-stage{ position:relative; flex:1; min-height:0; background:var(--bg-alt); }
+    #map-canvas{ position:absolute; inset:0; }
+    #map-canvas .gm-style-cc, #map-canvas a[href^="https://maps.google.com/maps"]{ display:none !important; }
+    .map-load-hint{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; text-align:center; padding:30px; font-size:13px; color:var(--text-secondary); background:var(--bg-alt); }
 
-    <style>
-        :root {
-            --primary-blue: #111111;
-            --primary-rgb: 17, 17, 17;
-            --women: #E5148C;
-            --women-dark: #C2126F;
-            --bg-base: #FFFFFF;
-            --bg-alt: #F7F8FA;
-            --bg-input: #F0F2F5;
-            --bg-hover: #FAFAFA;
-            --border-color: #ECECEC;
-            --text-primary: #111111;
-            --text-secondary: #8A8A8E;
-            --danger-red: #FF453A;
-            --success-green: #34C759;
-            --link-color: #1D9BF0;
-            --font-brand: 'Michroma', sans-serif;
-            --radius-pill: 999px;
-            --shadow-card: 0 6px 20px rgba(17,17,17,0.06), 0 1px 3px rgba(17,17,17,0.04);
-            --ease: cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        html, body { height: 100%; }
-        body {
-            margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-base);
-            color: var(--text-primary); overscroll-behavior-y: contain;
-        }
-        button, input, select { font-family: inherit; }
-        img { max-width: 100%; }
+    /* ── HABA RIDE bottom sheet — same look as the rider app's ride sheet ── */
+    .haba-ride-sheet{ position:absolute; left:0; right:0; bottom:0; z-index:3; background:var(--bg-surface); border-radius:22px 22px 0 0; box-shadow:0 -8px 24px rgba(0,0,0,0.12); padding:16px 18px calc(16px + var(--nav-bar-total) + env(safe-area-inset-bottom)); max-height:72vh; overflow-y:auto; }
+    .haba-ride-hero{ display:flex; align-items:center; gap:14px; margin-bottom:4px; cursor:pointer; border-radius:16px; padding:6px; margin-left:-6px; margin-right:-6px; transition:background 0.15s; }
+    .haba-ride-hero:active{ background:var(--bg-alt); transform:scale(0.99); }
+    .haba-ride-hero-icon{ width:56px; height:56px; border-radius:16px; background:var(--bg-alt); display:flex; align-items:center; justify-content:center; font-size:30px; flex-shrink:0; position:relative; }
+    .haba-ride-hero-text{ flex:1; min-width:0; }
+    .haba-ride-hero-title{ font-size:18px; font-weight:800; color:var(--text-primary); }
+    .haba-ride-hero-sub{ font-size:13.5px; color:var(--text-secondary); margin-top:2px; }
+    .haba-ride-hero-price{ font-size:13px; font-weight:800; color:var(--success-green); flex-shrink:0; white-space:nowrap; }
 
-        /* ══════════════════════ BRANDED SPLASH (copied from index.html) ══════════════════════ */
-        #loading-overlay {
-            position: fixed; inset: 0; background: var(--bg-base); z-index: 100000;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            opacity: 1; visibility: visible; transition: opacity 0.5s ease, visibility 0.5s; overflow: hidden;
-        }
-        #loading-overlay.hidden { opacity: 0; visibility: hidden; }
-        .haba-mark { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; height: 240px; z-index: 1; }
-        .haba-logo-img { position: relative; width: 150px; height: 150px; opacity: 0; animation: habaLogoIn 0.5s cubic-bezier(0.2,0.85,0.3,1.15) forwards 0.1s; display: flex; align-items: center; justify-content: center; }
-        .haba-logo-img svg { width: 92px; height: 92px; }
-        .haba-wordmark { font-family: var(--font-brand); font-size: 20px; font-weight: 400; letter-spacing: 4px; color: var(--text-primary); opacity: 0; animation: habaLogoIn 0.5s cubic-bezier(0.2,0.85,0.3,1.15) forwards 0.22s; }
-        .haba-driver-tag { font-size: 11px; font-weight: 700; letter-spacing: 3px; color: var(--text-secondary); text-transform: uppercase; opacity: 0; animation: habaLogoIn 0.5s ease forwards 0.32s; }
-        @keyframes habaLogoIn { 0% { opacity: 0; transform: scale(0.85); } 100% { opacity: 1; transform: scale(1); } }
-        .haba-mark.splash-exit { animation: none; transition: transform 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.4s ease; }
-        .haba-mark.splash-exit .haba-logo-img, .haba-mark.splash-exit .haba-wordmark, .haba-mark.splash-exit .haba-driver-tag { animation: none; opacity: 1; }
-        .haba-mark.splash-exit.splash-exit-run { transform: translateY(-32px) scale(0.94); opacity: 0; }
-        .haba-splash-dots { display: flex; align-items: center; justify-content: center; gap: 6px; opacity: 0; animation: habaLogoIn 0.4s ease forwards 0.5s; }
-        .haba-splash-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-primary); opacity: 0.35; animation: habaDotPulse 1.1s ease-in-out infinite; }
-        .haba-splash-dots span:nth-child(2) { animation-delay: 0.15s; }
-        .haba-splash-dots span:nth-child(3) { animation-delay: 0.3s; }
-        @keyframes habaDotPulse { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.75); } 40% { opacity: 1; transform: scale(1); } }
-        .haba-mark.splash-exit .haba-splash-dots { animation: none; opacity: 0; }
+    .stats-row{ display:flex; gap:10px; margin:14px 0 4px; }
+    .stat-card{ flex:1; background:var(--bg-alt); border-radius:16px; padding:12px 10px; text-align:center; }
+    .stat-value{ font-size:17px; font-weight:800; }
+    .stat-label{ font-size:10.5px; color:var(--text-secondary); font-weight:700; margin-top:2px; }
 
-        /* ══════════════════════ AUTH SCREEN (X-style, copied from index.html) ══════════════════════ */
-        #auth-screen { position: fixed; inset: 0; z-index: 9999; display: none; background: var(--bg-base); }
-        #auth-screen.active { display: flex; }
-        #auth-image-side { flex: 1; background: var(--primary-blue); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; padding: 60px; }
-        .auth-x-logo-mark { display: flex; flex-direction: column; align-items: center; gap: 18px; animation: authFadeSlideUp 0.6s cubic-bezier(0.16,1,0.3,1) both; }
-        .auth-logo-circle { width: 150px; height: 150px; border-radius: 50%; background: #FFFFFF; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .auth-x-logo-mark svg { width: 92px; height: 92px; }
-        .auth-x-logo-mark span { font-family: var(--font-brand); font-size: 26px; font-weight: 400; letter-spacing: 7px; color: #FFFFFF; }
-        .auth-x-logo-mark .auth-x-tag { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 3px; color: rgba(255,255,255,0.6); text-transform: uppercase; }
-        @keyframes authFadeSlideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-        @media (max-width: 768px) { #auth-image-side { display: none; } }
+    .haba-ride-options-list{ display:flex; flex-direction:column; gap:10px; max-height:50vh; overflow-y:auto; margin-top:14px; }
+    .haba-ride-option-card{ display:flex; align-items:center; gap:12px; padding:12px; border-radius:16px; border:1.5px solid var(--border-color); cursor:pointer; transition:0.15s; background:var(--bg-base); }
+    .haba-ride-option-card:active{ transform:scale(0.98); }
+    .haba-ride-option-card .haba-ride-option-icon{ width:44px; height:44px; border-radius:12px; background:var(--bg-alt); display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0; position:relative; }
+    .haba-ride-option-icon img, .haba-ride-option-icon svg{ width:1.7em; height:1.7em; }
+    .haba-ride-option-info{ flex:1; min-width:0; }
+    .haba-ride-option-name{ font-size:15px; font-weight:700; color:var(--text-primary); }
+    .haba-ride-option-meta{ font-size:12.5px; color:var(--text-secondary); margin-top:1px; }
+    .haba-ride-option-price{ font-size:15px; font-weight:800; color:var(--text-primary); flex-shrink:0; }
+    .empty-note{ text-align:center; font-size:13px; color:var(--text-secondary); padding:30px 20px; line-height:1.5; }
 
-        #auth-form-side { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; background: var(--bg-base); padding: 40px 24px; }
-        @media (max-width: 768px) {
-            #auth-form-side { padding: 0; align-items: stretch; }
-            #auth-form-side .auth-card-stack { max-width: 100%; height: 100%; }
-            #auth-form-side .auth-card { height: 100%; }
-            #auth-form-side .auth-landing { height: 100%; min-height: 100%; padding: max(32px, env(safe-area-inset-top)) 28px calc(28px + env(safe-area-inset-bottom)); justify-content: flex-start; }
-        }
+    .haba-ride-back-to-options{ background:none; border:none; color:var(--primary-blue); font-weight:700; font-size:14px; cursor:pointer; padding:0 0 12px; }
+    .haba-ride-confirm-header{ display:flex; align-items:center; gap:14px; margin-bottom:16px; }
+    .haba-ride-confirm-icon{ width:52px; height:52px; border-radius:14px; background:var(--bg-alt); display:flex; align-items:center; justify-content:center; font-size:28px; flex-shrink:0; position:relative; }
+    .haba-ride-confirm-icon img, .haba-ride-confirm-icon svg{ width:1.7em; height:1.7em; }
+    .haba-ride-seat-badge{ position:absolute; bottom:-5px; right:-5px; display:flex; align-items:center; gap:2px; background:#1c1c1e; color:#fff; font-size:10px; font-weight:700; padding:2px 5px 2px 4px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.3); line-height:1; }
+    .haba-ride-confirm-title{ font-size:17px; font-weight:800; color:var(--text-primary); }
+    .haba-ride-confirm-sub{ font-size:13px; color:var(--text-secondary); margin-top:1px; }
+    .haba-ride-confirm-stats{ display:flex; justify-content:space-between; padding:14px 0; border-top:1px solid var(--border-color); border-bottom:1px solid var(--border-color); margin-bottom:14px; }
+    .haba-ride-stat-value{ font-size:16px; font-weight:800; color:var(--text-primary); text-align:center; }
+    .haba-ride-stat-label{ font-size:11.5px; color:var(--text-secondary); text-align:center; margin-top:2px; }
+    .haba-ride-confirm-trip{ display:flex; flex-direction:column; gap:12px; margin-bottom:16px; }
+    .haba-ride-trip-row{ display:flex; align-items:flex-start; gap:10px; }
+    .haba-ride-trip-dot{ width:9px; height:9px; border-radius:50%; margin-top:5px; flex-shrink:0; }
+    .haba-ride-trip-dot.pickup{ background:var(--text-primary); }
+    .haba-ride-trip-dot.dropoff{ background:transparent; border:2px solid var(--text-primary); }
+    .haba-ride-trip-label{ font-size:12px; color:var(--text-secondary); }
+    .haba-ride-trip-value{ font-size:14px; font-weight:700; color:var(--text-primary); }
+    .confirm-actions{ display:flex; flex-direction:column; gap:9px; }
+    .btn-decline-ghost{ background:none; border:1.5px solid var(--border-color); color:var(--danger-red); font-weight:700; font-size:14px; padding:12px; border-radius:var(--radius-pill); cursor:pointer; width:100%; }
 
-        .auth-card-stack { position: relative; width: 100%; max-width: 380px; }
-        .auth-card { position: relative; width: 100%; padding: 0; animation: authCardIn 0.5s cubic-bezier(0.16,1,0.3,1) both; }
-        @keyframes authCardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-        .auth-card-brand { display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px; margin-bottom: 30px; }
-        .auth-card-brand svg { height: 44px; width: auto; }
-        .auth-card-brand span { font-family: var(--font-brand); font-size: 14px; font-weight: 400; color: var(--text-primary); letter-spacing: 4px; }
-        .auth-card-brand small { font-size: 10.5px; font-weight: 700; letter-spacing: 2.5px; color: var(--text-secondary); text-transform: uppercase; }
-        @media (max-width: 768px) { .auth-card-brand { display: flex; } }
+    .haba-ride-trip-status{ font-size:13px; font-weight:700; color:var(--primary-blue); background:rgba(var(--primary-rgb),0.08); border-radius:10px; padding:8px 10px; text-align:center; margin-bottom:14px; }
+    .haba-ride-driver-card{ display:flex; align-items:center; gap:12px; padding:4px 2px 16px; border-bottom:1px solid var(--border-color); margin-bottom:14px; }
+    .haba-ride-driver-avatar{ width:48px; height:48px; border-radius:50%; background-size:cover; background-position:center; background-color:var(--bg-alt); flex-shrink:0; }
+    .haba-ride-driver-info{ flex:1; min-width:0; }
+    .haba-ride-driver-name{ font-size:15px; font-weight:800; color:var(--text-primary); }
+    .haba-ride-driver-vehicle{ font-size:12.5px; color:var(--text-secondary); margin-top:1px; }
+    .haba-ride-driver-eta{ font-size:15px; font-weight:800; color:var(--text-primary); flex-shrink:0; text-align:right; }
+    .haba-ride-driver-eta-label{ font-size:11px; color:var(--text-secondary); font-weight:600; }
+    .haba-ride-trip-cancel{ width:100%; background:none; border:1.5px solid var(--border-color); color:var(--danger-red); font-weight:700; font-size:14px; padding:12px; border-radius:var(--radius-pill); cursor:pointer; margin-top:4px; }
+    .trip-actions{ display:flex; flex-direction:column; gap:9px; }
+    .btn-nav{ display:flex; align-items:center; justify-content:center; }
 
-        .auth-card h2 { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; color: var(--text-primary); font-size: 29px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; line-height: 1.2; }
-        .auth-card p { color: var(--text-secondary); font-size: 14.5px; margin-bottom: 26px; line-height: 1.45; }
+    #toast-container{ position:fixed; top:calc(14px + env(safe-area-inset-top)); left:50%; transform:translateX(-50%); z-index:999; display:flex; flex-direction:column; gap:8px; width:calc(100% - 40px); max-width:440px; align-items:center; pointer-events:none; }
+    .toast{ background:#1c1c1e; color:#fff; font-size:13px; font-weight:600; padding:11px 16px; border-radius:12px; box-shadow:var(--shadow-elevated); animation:toastIn 0.25s var(--ease-smooth); max-width:100%; text-align:center; }
+    @keyframes toastIn{ from{ opacity:0; transform:translateY(-8px);} to{ opacity:1; transform:translateY(0);} }
 
-        .auth-step-back-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--bg-input); color: var(--text-primary); cursor: pointer; margin-bottom: 18px; }
-        .auth-step-back-btn svg { width: 18px; height: 18px; }
-
-        .input-group { position: relative; margin-bottom: 16px; }
-        .input-group svg { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--text-secondary); pointer-events: none; transition: color 0.2s ease; }
-        .input-group .pill-input { padding-left: 46px; margin-bottom: 0; }
-        .input-group:focus-within svg { color: var(--text-primary); }
-        .pill-input { width: 100%; padding: 14px 20px; border: 1px solid var(--border-color); border-radius: 50px; font-size: 15px; outline: none; background: var(--bg-alt); color: var(--text-primary); margin-bottom: 16px; transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease; }
-        .pill-input:focus { border-color: var(--text-primary); background: var(--bg-base); box-shadow: 0 0 0 1px var(--text-primary); }
-
-        .btn-pill { width: 100%; padding: 14px 24px; border-radius: 50px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; transition: transform 0.15s ease, opacity 0.2s ease; }
-        .btn-primary { background: var(--text-primary); color: var(--bg-base); }
-        .btn-primary:hover { opacity: 0.88; }
-        .btn-primary:active { transform: scale(0.98); }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-primary); }
-        .btn-outline:hover { background: var(--bg-hover); }
-        .btn-outline:active { transform: scale(0.98); }
-
-        .auth-divider { display: flex; align-items: center; gap: 14px; margin: 20px 0; }
-        .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-color); }
-        .auth-divider span { font-size: 12px; color: var(--text-secondary); font-weight: 500; white-space: nowrap; }
-        .toggle-auth { margin-top: 22px; font-size: 14px; color: var(--text-secondary); text-align: center; }
-        .toggle-auth span { color: var(--link-color); font-weight: 700; cursor: pointer; }
-        .toggle-auth span:hover { text-decoration: underline; }
-        .error-text { color: var(--danger-red); font-size: 13px; min-height: 16px; margin: -6px 0 10px; }
-
-        /* ── Landing step (X's "Happening now" splash) ── */
-        .auth-landing { display: flex; flex-direction: column; height: auto; justify-content: center; }
-        .auth-landing-topbar { display: flex; align-items: center; gap: 8px; margin-bottom: 40px; }
-        .auth-landing-topbar svg { width: 26px; height: 26px; }
-        .auth-landing-topbar span { font-family: var(--font-brand); font-size: 13px; letter-spacing: 3px; color: var(--text-primary); }
-        .auth-landing-body h2 { font-size: 27px; }
-        .auth-landing-checklist { list-style: none; padding: 0; margin: 0 0 32px; display: flex; flex-direction: column; gap: 14px; }
-        .auth-landing-checklist li { display: flex; align-items: center; gap: 12px; font-size: 14.5px; color: var(--text-primary); font-weight: 500; }
-        .auth-landing-checklist svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--success-green); }
-        .auth-landing-actions { display: flex; flex-direction: column; gap: 12px; }
-        .auth-landing-btn-row { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 15px 20px; border-radius: 50px; border: 1.5px solid var(--border-color); background: var(--bg-base); font-size: 15px; font-weight: 700; color: var(--text-primary); cursor: pointer; transition: 0.15s; }
-        .auth-landing-btn-row:first-child { background: var(--text-primary); color: var(--bg-base); border-color: var(--text-primary); }
-        .auth-landing-btn-row:active { transform: scale(0.98); }
-        .auth-landing-arrow-circle { width: 26px; height: 26px; border-radius: 50%; background: rgba(var(--primary-rgb),0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .auth-landing-btn-row:first-child .auth-landing-arrow-circle { background: rgba(255,255,255,0.18); }
-        .auth-landing-arrow-circle svg { width: 14px; height: 14px; }
-
-        /* ── Vehicle-type onboarding step (matches account-type-card pattern) ── */
-        .account-type-choices { display: flex; flex-direction: column; gap: 12px; }
-        .account-type-card { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px; border-radius: 16px; border: 1.5px solid var(--border-color); background: var(--bg-base); cursor: pointer; text-align: left; transition: 0.15s; }
-        .account-type-card:hover { background: var(--bg-hover); }
-        .account-type-card.selected { border-color: var(--text-primary); background: rgba(var(--primary-rgb),0.04); }
-        .account-type-card.selected.womandrive-selected { border-color: var(--women); background: rgba(229,20,140,0.06); }
-        .account-type-card-icon { width: 52px; height: 52px; border-radius: 14px; background: var(--bg-input); display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
-        .account-type-card-icon img { width: 34px; height: 34px; object-fit: contain; }
-        .account-type-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-        .account-type-card-title { font-size: 15px; font-weight: 800; color: var(--text-primary); }
-        .account-type-card-sub { font-size: 12.5px; color: var(--text-secondary); line-height: 1.35; }
-        .account-type-card-check { margin-left: auto; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border-color); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-        .account-type-card.selected .account-type-card-check { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
-        .account-type-card.selected.womandrive-selected .account-type-card-check { background: var(--women); border-color: var(--women); }
-        .account-type-card-check svg { width: 12px; height: 12px; opacity: 0; }
-        .account-type-card.selected .account-type-card-check svg { opacity: 1; }
-
-        /* ══════════════════════ APP SHELL / DASHBOARD ══════════════════════ */
-        #app-shell { display: none; }
-        #app-shell.active { display: block; }
-        .app-viewport { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg-base); position: relative; display: flex; flex-direction: column; }
-
-        .dash-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }
-        .dash-header-brand { display: flex; align-items: center; gap: 8px; }
-        .dash-header-brand svg { width: 22px; height: 22px; }
-        .dash-header-brand .brand-word { font-family: var(--font-brand); font-size: 15px; letter-spacing: 2px; color: var(--text-primary); }
-        .dash-header-brand .brand-tag { font-size: 10px; font-weight: 700; letter-spacing: 2px; color: var(--text-secondary); text-transform: uppercase; background: var(--bg-input); padding: 3px 8px; border-radius: 6px; }
-        .icon-btn { width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--border-color); background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-primary); }
-        .icon-btn svg { width: 16px; height: 16px; }
-
-        .online-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }
-        .online-toggle-label { font-size: 15px; font-weight: 800; }
-        .online-toggle-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; max-width: 230px; }
-        .switch { position: relative; width: 50px; height: 30px; flex-shrink: 0; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; inset: 0; background: #D9D9DE; border-radius: 999px; transition: 0.2s; }
-        .slider::before { content: ""; position: absolute; height: 24px; width: 24px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
-        input:checked + .slider { background: var(--success-green); }
-        input:checked + .slider::before { transform: translateX(20px); }
-        input:disabled + .slider { opacity: 0.5; cursor: not-allowed; }
-
-        .map-canvas { width: 100%; height: 180px; background: var(--bg-input); flex-shrink: 0; }
-        .panel { padding: 16px 20px 20px; }
-        .panel h2 { font-size: 14px; font-weight: 800; margin: 0 0 12px; }
-        .empty-msg { color: var(--text-secondary); font-size: 13.5px; text-align: center; padding: 18px 10px; }
-
-        .incoming-list { display: flex; flex-direction: column; gap: 10px; }
-        .ride-card { border: 1.5px solid var(--border-color); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; background: var(--bg-base); }
-        .ride-card-top { display: flex; align-items: center; justify-content: space-between; }
-        .ride-type-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: var(--radius-pill); background: rgba(var(--primary-rgb),0.06); }
-        .ride-type-chip img { width: 14px; height: 14px; object-fit: contain; }
-        .ride-type-chip.womandrive { background: rgba(229,20,140,0.1); color: var(--women-dark); }
-        .ride-price { font-size: 17px; font-weight: 800; }
-        .ride-route { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
-        .ride-route b { color: var(--text-primary); font-weight: 600; }
-        .ride-meta-row { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); font-weight: 600; }
-        .btn-accept { padding: 11px; border: none; border-radius: var(--radius-pill); background: var(--text-primary); color: #fff; font-weight: 700; font-size: 13.5px; cursor: pointer; }
-
-        .trip-status-badge { display: inline-block; font-size: 12.5px; font-weight: 800; color: var(--text-primary); background: rgba(var(--primary-rgb),0.08); padding: 6px 12px; border-radius: var(--radius-pill); margin-bottom: 14px; }
-        .trip-rider-row { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border-color); margin-bottom: 14px; }
-        .trip-rider-avatar { width: 48px; height: 48px; border-radius: 50%; background-size: cover; background-position: center; background-color: var(--bg-input); flex-shrink: 0; }
-        .trip-rider-name { font-size: 15px; font-weight: 800; }
-        .trip-rider-fare { font-size: 13.5px; color: var(--text-secondary); font-weight: 700; margin-top: 1px; }
-        .trip-stops { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
-        .trip-stop { display: flex; align-items: flex-start; gap: 10px; }
-        .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-        .dot.pickup { background: var(--text-primary); }
-        .dot.dropoff { background: transparent; border: 2px solid var(--text-primary); }
-        .stop-label { font-size: 11.5px; color: var(--text-secondary); }
-        .stop-value { font-size: 14px; font-weight: 700; }
-        .trip-meta-row { display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); margin-bottom: 16px; font-size: 13px; font-weight: 700; color: var(--text-secondary); }
-        .trip-meta-row span { color: var(--text-primary); }
-        .btn-danger-outline { width: 100%; padding: 13px; margin-top: 10px; border: 1.5px solid var(--border-color); border-radius: var(--radius-pill); background: none; color: var(--danger-red); font-weight: 700; font-size: 14px; cursor: pointer; }
-
-        .earnings-strip { margin-top: auto; padding: 14px 20px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border-color); font-size: 13.5px; color: var(--text-secondary); text-align: center; }
-        .earnings-strip strong { color: var(--text-primary); }
-
-        #toast-container { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 100050; width: min(92%, 440px); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
-        .toast { padding: 12px 16px; border-radius: 12px; background: #1c1c1e; color: #fff; font-size: 13.5px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.2); animation: toast-in 0.2s var(--ease); }
-        .toast.error { background: #B3261E; }
-        .toast.success { background: #1D6E3F; }
-        @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
-    </style>
+    .sheet-backdrop{ position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:50; display:none; }
+    .sheet-backdrop.open{ display:block; }
+    .profile-sheet{ position:fixed; left:0; right:0; bottom:-100%; max-width:480px; margin:0 auto; background:#fff; border-radius:22px 22px 0 0; z-index:51; padding:20px 20px calc(24px + env(safe-area-inset-bottom)); transition:bottom 0.3s var(--ease-smooth); }
+    .profile-sheet.open{ bottom:0; }
+    .sheet-title{ font-size:16px; font-weight:800; margin-bottom:14px; }
+    .sheet-row{ display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border-color); font-size:13.5px; }
+    .sheet-row span:first-child{ color:var(--text-secondary); font-weight:600; }
+    .sheet-row span:last-child{ font-weight:700; }
+</style>
 </head>
 <body>
-    <div id="toast-container"></div>
 
-    <!-- ═══ BRANDED SPLASH (shown until Firebase auth resolves) ═══ -->
-    <div id="loading-overlay">
-        <div class="haba-mark" id="splash-mark" role="img" aria-label="Haba Driver">
-            <div class="haba-logo-img">
-                <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                    <polygon points="20,80 170,30 80,110" fill="var(--primary-blue)" fill-opacity="0.75" />
-                    <polygon points="120,180 170,30 80,110" fill="var(--primary-blue)" />
-                    <polygon points="20,80 80,110 80,140" fill="var(--primary-blue)" fill-opacity="0.55" />
-                </svg>
+<div id="toast-container"></div>
+
+<div id="app-shell">
+
+    <div id="screen-loading"><div class="spinner"></div></div>
+
+    <div id="screen-auth" style="display:none;">
+        <div class="auth-inner">
+            <div class="brand-mark">Haba</div>
+            <div class="brand-sub">Driver</div>
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab active" id="tab-signin">Sign in</button>
+                <button type="button" class="auth-tab" id="tab-signup">Sign up</button>
             </div>
-            <span class="haba-wordmark">HABA</span>
-            <span class="haba-driver-tag">Driver</span>
-            <div class="haba-splash-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="auth-error" id="auth-error"></div>
+            <form id="form-signin">
+                <div class="field"><label>Email</label><input type="email" id="signin-email" autocomplete="email" required></div>
+                <div class="field"><label>Password</label><input type="password" id="signin-password" autocomplete="current-password" required></div>
+                <button type="submit" class="btn-primary" id="btn-signin">Sign in</button>
+            </form>
+            <form id="form-signup" style="display:none;">
+                <div class="field"><label>Full name</label><input type="text" id="signup-name" autocomplete="name" required></div>
+                <div class="field"><label>Email</label><input type="email" id="signup-email" autocomplete="email" required></div>
+                <div class="field"><label>Password</label><input type="password" id="signup-password" autocomplete="new-password" minlength="6" required></div>
+                <button type="submit" class="btn-primary" id="btn-signup">Create driver account</button>
+            </form>
+            <div class="auth-switch" id="auth-switch-text">New driver? <a id="link-to-signup">Sign up</a></div>
         </div>
     </div>
 
-    <!-- ═══ AUTH SCREEN ═══ -->
-    <div id="auth-screen">
-        <div id="auth-image-side">
-            <div class="auth-x-logo-mark">
-                <div class="auth-logo-circle">
-                    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Haba" fill="none" stroke="#111111" stroke-width="11" stroke-linejoin="round" stroke-linecap="round">
-                        <polygon points="20,80 170,30 80,110" stroke-opacity="0.75" />
-                        <polygon points="120,180 170,30 80,110" />
-                        <polygon points="20,80 80,110 80,140" stroke-opacity="0.55" />
-                    </svg>
+    <div id="screen-onboarding" style="display:none;">
+        <div class="auth-inner">
+            <div class="brand-mark">Haba</div>
+            <div class="brand-sub">Set up your vehicle</div>
+            <div class="auth-error" id="onboarding-error"></div>
+            <form id="form-onboarding" style="margin-top:22px;">
+                <div class="field">
+                    <label>Vehicle type</label>
+                    <select id="ob-vehicle-type">
+                        <option value="car">Car</option>
+                        <option value="bike">Bike</option>
+                        <option value="scoot">Scoot</option>
+                    </select>
                 </div>
-                <span>HABA</span>
-                <span class="auth-x-tag">Driver</span>
-            </div>
-        </div>
-
-        <div id="auth-form-side">
-            <div class="auth-card-stack">
-                <div class="auth-card">
-                    <div class="auth-card-brand">
-                        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Haba">
-                            <polygon points="20,80 170,30 80,110" fill="#111111" fill-opacity="0.75" />
-                            <polygon points="120,180 170,30 80,110" fill="#111111" />
-                            <polygon points="20,80 80,110 80,140" fill="#111111" fill-opacity="0.55" />
-                        </svg>
-                        <span>HABA</span>
-                        <small>Driver</small>
-                    </div>
-
-                    <!-- ── LANDING STEP ── -->
-                    <div id="auth-step-landing" class="auth-landing">
-                        <div class="auth-landing-topbar">
-                            <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                                <polygon points="20,80 170,30 80,110" fill="#111111" fill-opacity="0.75" />
-                                <polygon points="120,180 170,30 80,110" fill="#111111" />
-                                <polygon points="20,80 80,110 80,140" fill="#111111" fill-opacity="0.55" />
-                            </svg>
-                            <span>HABA DRIVER</span>
-                        </div>
-                        <div class="auth-landing-body">
-                            <h2>Turn your drive time into income</h2>
-                            <ul class="auth-landing-checklist">
-                                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Get matched with nearby Haba Ride requests</li>
-                                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> See the fare before you accept</li>
-                                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> Go online and offline whenever you want</li>
-                            </ul>
-                        </div>
-                        <div class="auth-landing-actions">
-                            <button type="button" id="btn-landing-login" class="auth-landing-btn-row">
-                                Log in to drive
-                                <span class="auth-landing-arrow-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
-                            </button>
-                            <button type="button" id="btn-landing-signup" class="auth-landing-btn-row">
-                                Become a driver
-                                <span class="auth-landing-arrow-circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- ── EMAIL SIGN IN / SIGN UP STEP ── -->
-                    <div id="auth-step-email" style="display:none;">
-                        <button type="button" id="btn-email-back-to-landing" class="auth-step-back-btn" aria-label="Back">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
-                        </button>
-                        <h2 id="auth-email-heading">Sign in</h2>
-                        <p id="auth-email-subtitle">Enter your driver account email and password</p>
-
-                        <div class="input-group">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-                            <input type="email" id="auth-email" class="pill-input" placeholder="Email address" autocomplete="email">
-                        </div>
-                        <div class="input-group">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                            <input type="password" id="auth-email-password" class="pill-input" placeholder="Password" autocomplete="current-password" minlength="6">
-                        </div>
-
-                        <div class="error-text" id="auth-error"></div>
-                        <button type="button" id="btn-email-auth-submit" class="btn-pill btn-primary">Sign In</button>
-                        <p class="toggle-auth"><span id="btn-toggle-email-mode">Don't have a driver account? Sign up</span></p>
-                    </div>
+                <div class="row-2">
+                    <div class="field"><label>Vehicle model</label><input type="text" id="ob-model" placeholder="e.g. Toyota Corolla" required></div>
+                    <div class="field"><label>Color</label><input type="text" id="ob-color" placeholder="e.g. White" required></div>
                 </div>
-            </div>
+                <div class="field"><label>License plate</label><input type="text" id="ob-plate" placeholder="e.g. CA 123-456" required></div>
+                <div class="checkbox-row" id="ob-woman-row">
+                    <input type="checkbox" id="ob-is-woman">
+                    <label for="ob-is-woman">I'm a woman driver — also show me Woman Drive Woman requests</label>
+                </div>
+                <div class="field-hint">Only shown for car drivers, since Woman Drive Woman rides use cars.</div>
+                <button type="submit" class="btn-primary" id="btn-onboarding" style="margin-top:16px;">Start driving</button>
+            </form>
         </div>
     </div>
 
-    <!-- ═══ VEHICLE ONBOARDING (first sign-up only) ═══ -->
-    <div id="onboarding-screen" style="display:none; position: fixed; inset: 0; z-index: 9998; background: var(--bg-base); overflow-y: auto;">
-        <div class="auth-card-stack" style="max-width: 420px; margin: 0 auto; padding: 40px 24px 60px;">
-            <div class="auth-card">
+    <div id="screen-app">
+        <header class="app-header">
+            <div class="header-avatar" id="header-avatar" title="Profile"></div>
+            <div class="header-id">
+                <div class="header-name" id="header-name">Driver</div>
+                <div class="header-rating" id="header-rating">★ 5.0</div>
+            </div>
+            <div class="online-switch">
+                <span class="online-switch-label" id="online-switch-label">Offline</span>
+                <div class="toggle" id="online-toggle"></div>
+            </div>
+        </header>
 
-                <!-- Step 1: vehicle type -->
-                <div id="ob-step-vehicle">
-                    <h2>What do you drive?</h2>
-                    <p>Riders are matched to your vehicle type</p>
-                    <div class="account-type-choices" id="ob-vehicle-type">
-                        <button type="button" class="account-type-card selected" data-type="car">
-                            <span class="account-type-card-icon"><img src="https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png" alt="Car"></span>
-                            <span class="account-type-card-body"><span class="account-type-card-title">Car</span><span class="account-type-card-sub">Affordable, everyday rides · 4 seats</span></span>
-                            <span class="account-type-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
-                        </button>
-                        <button type="button" class="account-type-card" data-type="bike">
-                            <span class="account-type-card-icon"><img src="https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png" alt="Bike"></span>
-                            <span class="account-type-card-body"><span class="account-type-card-title">Bike</span><span class="account-type-card-sub">Quick trips through traffic · 1 seat</span></span>
-                            <span class="account-type-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
-                        </button>
-                        <button type="button" class="account-type-card" data-type="scoot">
-                            <span class="account-type-card-icon"><img src="https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png" alt="Scoot"></span>
-                            <span class="account-type-card-body"><span class="account-type-card-title">Scoot</span><span class="account-type-card-sub">Short hops, lowest cost · 1 seat</span></span>
-                            <span class="account-type-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
-                        </button>
-                        <button type="button" class="account-type-card" data-type="womandrive">
-                            <span class="account-type-card-icon"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#E5148C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M8.5 18h7"/></svg></span>
-                            <span class="account-type-card-body"><span class="account-type-card-title">Woman Drive Woman</span><span class="account-type-card-sub">Women-only rides · 4 seats</span></span>
-                            <span class="account-type-card-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
-                        </button>
+        <div class="map-stage">
+            <div id="map-canvas"></div>
+            <div class="map-load-hint" id="map-load-hint">Loading map…</div>
+
+            <div class="haba-ride-sheet" id="ride-sheet">
+
+                <!-- OFFLINE step -->
+                <div id="step-offline">
+                    <div class="haba-ride-hero" id="hero-go-online">
+                        <div class="haba-ride-hero-icon">🚘</div>
+                        <div class="haba-ride-hero-text">
+                            <div class="haba-ride-hero-title">You're offline</div>
+                            <div class="haba-ride-hero-sub">Tap to go online and start receiving ride requests</div>
+                        </div>
+                        <div class="haba-ride-hero-price">Go online</div>
                     </div>
-                    <button type="button" id="btn-ob-vehicle-continue" class="btn-pill btn-primary" style="margin-top:22px;">Continue</button>
+                    <div class="stats-row">
+                        <div class="stat-card"><div class="stat-value" id="stat-trips">0</div><div class="stat-label">Trips today</div></div>
+                        <div class="stat-card"><div class="stat-value" id="stat-earnings">R0</div><div class="stat-label">Earned today</div></div>
+                    </div>
                 </div>
 
-                <!-- Step 2: driver + vehicle details -->
-                <div id="ob-step-details" style="display:none;">
-                    <button type="button" id="btn-ob-details-back" class="auth-step-back-btn" aria-label="Back">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
-                    </button>
-                    <h2>Set up your driver profile</h2>
-                    <p>Riders will see this once you accept their trip</p>
-                    <form id="form-onboarding-details">
-                        <div class="input-group">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                            <input type="text" id="ob-name" class="pill-input" placeholder="Full name" required>
+                <!-- LIST step: nearby requested rides -->
+                <div id="step-list" style="display:none;">
+                    <div class="haba-ride-hero" id="hero-online-status" style="cursor:default;">
+                        <div class="haba-ride-hero-icon">📡</div>
+                        <div class="haba-ride-hero-text">
+                            <div class="haba-ride-hero-title">You're online</div>
+                            <div class="haba-ride-hero-sub" id="online-sub">Looking for nearby ride requests…</div>
                         </div>
-                        <div class="input-group">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                            <input type="url" id="ob-photo" class="pill-input" placeholder="Photo URL (optional)">
-                        </div>
-                        <div class="input-group">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h2"></path><circle cx="6.5" cy="16.5" r="2.5"></circle><circle cx="16.5" cy="16.5" r="2.5"></circle></svg>
-                            <input type="text" id="ob-model" class="pill-input" placeholder="Vehicle model (e.g. Toyota Corolla)" required>
-                        </div>
-                        <div class="input-group">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle></svg>
-                            <input type="text" id="ob-color" class="pill-input" placeholder="Vehicle color" required>
-                        </div>
-                        <div class="input-group">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"></rect><path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"></path></svg>
-                            <input type="text" id="ob-plate" class="pill-input" placeholder="License plate" required>
-                        </div>
-                        <div class="error-text" id="onboarding-error"></div>
-                        <button type="submit" class="btn-pill btn-primary">Save &amp; start driving</button>
-                    </form>
+                    </div>
+                    <div class="haba-ride-options-list" id="requests-list"></div>
                 </div>
+
+                <!-- CONFIRM step: a specific request selected -->
+                <div id="step-confirm" style="display:none;">
+                    <button type="button" class="haba-ride-back-to-options" id="btn-back-to-list">‹ Back</button>
+                    <div class="haba-ride-confirm-header">
+                        <div class="haba-ride-confirm-icon" id="confirm-icon"></div>
+                        <div>
+                            <div class="haba-ride-confirm-title" id="confirm-title">Ride</div>
+                            <div class="haba-ride-confirm-sub" id="confirm-sub">Rider</div>
+                        </div>
+                    </div>
+                    <div class="haba-ride-confirm-stats">
+                        <div><div class="haba-ride-stat-value" id="confirm-distance">--</div><div class="haba-ride-stat-label">To pickup</div></div>
+                        <div><div class="haba-ride-stat-value" id="confirm-eta">--</div><div class="haba-ride-stat-label">ETA</div></div>
+                        <div><div class="haba-ride-stat-value" id="confirm-price">--</div><div class="haba-ride-stat-label">Fare</div></div>
+                    </div>
+                    <div class="haba-ride-confirm-trip">
+                        <div class="haba-ride-trip-row"><span class="haba-ride-trip-dot pickup"></span><div><div class="haba-ride-trip-label">Pickup</div><div class="haba-ride-trip-value" id="confirm-pickup">--</div></div></div>
+                        <div class="haba-ride-trip-row"><span class="haba-ride-trip-dot dropoff"></span><div><div class="haba-ride-trip-label">Drop-off</div><div class="haba-ride-trip-value" id="confirm-dropoff">--</div></div></div>
+                    </div>
+                    <div class="confirm-actions">
+                        <button type="button" class="btn-primary" id="btn-accept">Accept ride</button>
+                        <button type="button" class="btn-decline-ghost" id="btn-decline">Decline</button>
+                    </div>
+                </div>
+
+                <!-- TRIP step: accepted / arriving / in_progress -->
+                <div id="step-trip" style="display:none;"></div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- ═══ APP SHELL / DASHBOARD ═══ -->
-    <div id="app-shell">
-        <div class="app-viewport">
-            <header class="dash-header">
-                <div class="dash-header-brand">
-                    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                        <polygon points="20,80 170,30 80,110" fill="#111111" fill-opacity="0.75" />
-                        <polygon points="120,180 170,30 80,110" fill="#111111" />
-                        <polygon points="20,80 80,110 80,140" fill="#111111" fill-opacity="0.55" />
-                    </svg>
-                    <span class="brand-word">HABA</span>
-                    <span class="brand-tag">Driver</span>
-                </div>
-                <button class="icon-btn" id="btn-signout" title="Sign out">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-                </button>
-            </header>
+<div class="sheet-backdrop" id="profile-backdrop"></div>
+<div class="profile-sheet" id="profile-sheet">
+    <div class="sheet-title">Your profile</div>
+    <div class="sheet-row"><span>Vehicle</span><span id="sheet-vehicle">—</span></div>
+    <div class="sheet-row"><span>Plate</span><span id="sheet-plate">—</span></div>
+    <div class="sheet-row"><span>Rating</span><span id="sheet-rating">—</span></div>
+    <div class="sheet-row"><span>Email</span><span id="sheet-email">—</span></div>
+    <button type="button" class="btn-ghost" style="margin-top:18px;" id="btn-signout">Sign out</button>
+</div>
 
-            <div class="online-toggle-row">
-                <div>
-                    <div class="online-toggle-label" id="online-status-label">You're offline</div>
-                    <div class="online-toggle-sub" id="online-status-sub">Go online to start receiving ride requests</div>
-                </div>
-                <label class="switch">
-                    <input type="checkbox" id="online-toggle">
-                    <span class="slider"></span>
-                </label>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import {
+    getAuth, onAuthStateChanged, signOut,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import {
+    getDatabase, ref, get, set, update, onValue, off, query,
+    orderByChild, equalTo, limitToLast, serverTimestamp,
+    runTransaction, onDisconnect
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
+
+// Same Firebase project as the main Haba app — drivers and riders share one
+// Realtime Database (ride_requests/{id}, driver_profiles/{uid}, drivers/{uid}),
+// and the same secured getGoogleMapsApiKey Cloud Function for the Maps key.
+const firebaseConfig = {
+    apiKey: "AIzaSyBQSPwpVbGrdCuOoyitAeWQHIeipj2MgIY",
+    authDomain: "newstart-64c43.firebaseapp.com",
+    databaseURL: "https://newstart-64c43-default-rtdb.firebaseio.com",
+    projectId: "newstart-64c43",
+    storageBucket: "newstart-64c43.firebasestorage.app",
+    messagingSenderId: "941619830061",
+    appId: "1:941619830061:web:de9e0f791eb8f6eacf87a4"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const database = getDatabase(app);
+const functionsClient = getFunctions(app);
+const getGoogleMapsApiKeyCallable = httpsCallable(functionsClient, 'getGoogleMapsApiKey');
+
+const DEFAULT_AVATAR_URL = 'https://api.dicebear.com/7.x/initials/svg?seed=Driver&backgroundColor=111111&textColor=ffffff';
+
+const RIDE_ICONS = {
+    car: `<img src="https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png" alt="Car">`,
+    bike: `<img src="https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png" alt="Bike">`,
+    scoot: `<img src="https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png" alt="Scoot">`,
+    womandrive: `<svg viewBox="0 0 24 24" fill="none" stroke="#E5148C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M8.5 18h7"/></svg>`
+};
+const RIDE_MARKER_ICON_URLS = {
+    car: 'https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png',
+    bike: 'https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png',
+    scoot: 'https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png'
+};
+const RIDE_LABELS = { car: 'Car', bike: 'Bike', scoot: 'Scoot', womandrive: 'Woman Drive Woman' };
+const RIDE_SEATS = { car: 4, bike: 1, scoot: 1, womandrive: 4 };
+
+function seatBadgeHtml(rideType) {
+    return `<span class="haba-ride-seat-badge">${RIDE_SEATS[rideType] || 1}</span>`;
+}
+
+// ── Toasts ──────────────────────────────────────────────────────────────
+function notify(msg) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => el.remove(), 3200);
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function haversineKm(a, b) {
+    const R = 6371, dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180;
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+// ── Screen switching ──────────────────────────────────────────────────────
+function showScreen(name) {
+    document.getElementById('screen-loading').style.display = name === 'loading' ? 'flex' : 'none';
+    document.getElementById('screen-auth').style.display = name === 'auth' ? 'block' : 'none';
+    document.getElementById('screen-onboarding').style.display = name === 'onboarding' ? 'block' : 'none';
+    document.getElementById('screen-app').style.display = name === 'app' ? 'flex' : 'none';
+}
+
+function showSheetStep(step) {
+    document.getElementById('step-offline').style.display = step === 'offline' ? 'block' : 'none';
+    document.getElementById('step-list').style.display = step === 'list' ? 'block' : 'none';
+    document.getElementById('step-confirm').style.display = step === 'confirm' ? 'block' : 'none';
+    document.getElementById('step-trip').style.display = step === 'trip' ? 'block' : 'none';
+}
+
+// ── Auth tabs ──────────────────────────────────────────────────────────
+const tabSignin = document.getElementById('tab-signin');
+const tabSignup = document.getElementById('tab-signup');
+const formSignin = document.getElementById('form-signin');
+const formSignup = document.getElementById('form-signup');
+const authError = document.getElementById('auth-error');
+const authSwitchText = document.getElementById('auth-switch-text');
+
+function setAuthMode(mode) {
+    authError.style.display = 'none';
+    const signinMode = mode === 'signin';
+    tabSignin.classList.toggle('active', signinMode);
+    tabSignup.classList.toggle('active', !signinMode);
+    formSignin.style.display = signinMode ? 'block' : 'none';
+    formSignup.style.display = signinMode ? 'none' : 'block';
+    authSwitchText.innerHTML = signinMode
+        ? `New driver? <a id="link-to-signup">Sign up</a>`
+        : `Already driving with Haba? <a id="link-to-signin">Sign in</a>`;
+    const link = document.getElementById(signinMode ? 'link-to-signup' : 'link-to-signin');
+    link.addEventListener('click', () => setAuthMode(signinMode ? 'signup' : 'signin'));
+}
+tabSignin.addEventListener('click', () => setAuthMode('signin'));
+tabSignup.addEventListener('click', () => setAuthMode('signup'));
+document.getElementById('link-to-signup').addEventListener('click', () => setAuthMode('signup'));
+
+function showAuthError(err) {
+    const map = {
+        'auth/invalid-email': 'That email address looks invalid.',
+        'auth/user-not-found': 'No driver account found with that email.',
+        'auth/wrong-password': 'Incorrect password.',
+        'auth/invalid-credential': 'Incorrect email or password.',
+        'auth/email-already-in-use': 'An account with that email already exists — try signing in instead.',
+        'auth/weak-password': 'Password should be at least 6 characters.'
+    };
+    authError.textContent = map[err.code] || err.message || 'Something went wrong. Try again.';
+    authError.style.display = 'block';
+}
+
+formSignin.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-signin');
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+        await signInWithEmailAndPassword(auth,
+            document.getElementById('signin-email').value.trim(),
+            document.getElementById('signin-password').value);
+    } catch (err) { showAuthError(err); }
+    finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+});
+
+formSignup.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-signup');
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    try {
+        const cred = await createUserWithEmailAndPassword(auth,
+            document.getElementById('signup-email').value.trim(),
+            document.getElementById('signup-password').value);
+        await updateProfile(cred.user, { displayName: document.getElementById('signup-name').value.trim() || 'Driver' });
+    } catch (err) { showAuthError(err); }
+    finally { btn.disabled = false; btn.textContent = 'Create driver account'; }
+});
+
+// ── Vehicle onboarding ────────────────────────────────────────────────
+const obVehicleType = document.getElementById('ob-vehicle-type');
+const obWomanRow = document.getElementById('ob-woman-row');
+function syncWomanRowVisibility() { obWomanRow.style.display = obVehicleType.value === 'car' ? 'flex' : 'none'; }
+obVehicleType.addEventListener('change', syncWomanRowVisibility);
+syncWomanRowVisibility();
+
+document.getElementById('form-onboarding').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const user = auth.currentUser;
+    if (!user) return;
+    const btn = document.getElementById('btn-onboarding');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const vehicleType = obVehicleType.value;
+    const isWoman = vehicleType === 'car' && document.getElementById('ob-is-woman').checked;
+    const profile = {
+        name: user.displayName || 'Driver', photoURL: user.photoURL || '',
+        vehicleType, vehicleModel: document.getElementById('ob-model').value.trim(),
+        vehicleColor: document.getElementById('ob-color').value.trim(),
+        plate: document.getElementById('ob-plate').value.trim(),
+        isWoman, rating: 5, createdAt: serverTimestamp()
+    };
+    try {
+        await set(ref(database, `driver_profiles/${user.uid}`), profile);
+        driverProfile = profile;
+        enterApp();
+    } catch (err) {
+        document.getElementById('onboarding-error').textContent = err.message || 'Could not save your details — try again.';
+        document.getElementById('onboarding-error').style.display = 'block';
+    } finally { btn.disabled = false; btn.textContent = 'Start driving'; }
+});
+
+// ── Session state ─────────────────────────────────────────────────────
+let driverProfile = null;
+let isOnline = false;
+let watchId = null;
+let currentPos = null;
+let requestsUnsub = null;
+let activeRequestId = null;
+let activeRequestUnsub = null;
+let selectedRequestId = null;
+const declinedIds = new Set();
+const allRequestedRides = {};
+
+// ── Auth state ─────────────────────────────────────────────────────────
+onAuthStateChanged(auth, async (user) => {
+    if (!user) { driverProfile = null; showScreen('auth'); return; }
+    showScreen('loading');
+    try {
+        const snap = await get(ref(database, `driver_profiles/${user.uid}`));
+        if (!snap.exists()) { showScreen('onboarding'); return; }
+        driverProfile = snap.val();
+        enterApp();
+    } catch (err) {
+        notify("Couldn't load your driver profile.");
+        showScreen('auth');
+    }
+});
+
+function enterApp() {
+    const user = auth.currentUser;
+    document.getElementById('header-avatar').style.backgroundImage = `url('${driverProfile.photoURL || DEFAULT_AVATAR_URL}')`;
+    document.getElementById('header-name').textContent = driverProfile.name || 'Driver';
+    document.getElementById('header-rating').textContent = `★ ${(driverProfile.rating || 5).toFixed(1)} · ${RIDE_LABELS[driverProfile.vehicleType] || 'Car'}`;
+    document.getElementById('sheet-vehicle').textContent = [driverProfile.vehicleColor, driverProfile.vehicleModel].filter(Boolean).join(' ') || '—';
+    document.getElementById('sheet-plate').textContent = driverProfile.plate || '—';
+    document.getElementById('sheet-rating').textContent = `★ ${(driverProfile.rating || 5).toFixed(1)}`;
+    document.getElementById('sheet-email').textContent = user.email || '—';
+    showScreen('app');
+    showSheetStep('offline');
+    loadTodayStats();
+    initDriverMap().then(() => resumeActiveTripIfAny()).catch(err => {
+        console.error('[haba-driver] map failed to load', err);
+        document.getElementById('map-load-hint').textContent = "Map couldn't load. Check that getGoogleMapsApiKey is deployed with its secret set.";
+    });
+}
+
+// ── Profile sheet ─────────────────────────────────────────────────────
+const profileSheet = document.getElementById('profile-sheet');
+const profileBackdrop = document.getElementById('profile-backdrop');
+document.getElementById('header-avatar').addEventListener('click', () => { profileSheet.classList.add('open'); profileBackdrop.classList.add('open'); });
+profileBackdrop.addEventListener('click', () => { profileSheet.classList.remove('open'); profileBackdrop.classList.remove('open'); });
+document.getElementById('btn-signout').addEventListener('click', async () => {
+    if (isOnline) await goOffline();
+    profileSheet.classList.remove('open'); profileBackdrop.classList.remove('open');
+    await signOut(auth);
+});
+
+// ── Today's stats ──────────────────────────────────────────────────────
+async function loadTodayStats() {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+        const q = query(ref(database, 'ride_requests'), orderByChild('driverId'), equalTo(user.uid));
+        const snap = await get(q);
+        let trips = 0, earnings = 0;
+        const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+        snap.forEach(child => {
+            const r = child.val();
+            if (r.status === 'completed' && r.completedAt && r.completedAt >= startOfToday.getTime()) { trips++; earnings += (r.price || 0); }
+        });
+        document.getElementById('stat-trips').textContent = trips;
+        document.getElementById('stat-earnings').textContent = `R${earnings.toFixed(0)}`;
+    } catch (err) {
+        console.warn('[haba-driver] stats query failed (consider adding a driverId index)', err);
+    }
+}
+
+// ── Google Maps — same secured key-fetch pattern as the rider app ───────
+let googleMapsLoadPromise = null;
+let cachedGoogleMapsApiKey = null;
+async function fetchGoogleMapsApiKey() {
+    if (cachedGoogleMapsApiKey) return cachedGoogleMapsApiKey;
+    const result = await getGoogleMapsApiKeyCallable();
+    const key = (result.data && result.data.apiKey) || '';
+    if (key) cachedGoogleMapsApiKey = key;
+    return key;
+}
+function loadGoogleMapsScript() {
+    if (googleMapsLoadPromise) return googleMapsLoadPromise;
+    googleMapsLoadPromise = (async () => {
+        if (window.google && window.google.maps) return;
+        const apiKey = await fetchGoogleMapsApiKey();
+        if (!apiKey) throw new Error('getGoogleMapsApiKey returned no key');
+        await new Promise((resolve, reject) => {
+            window.__onGoogleMapsLoaded = () => resolve();
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=__onGoogleMapsLoaded`;
+            script.async = true; script.defer = true;
+            script.onerror = () => reject(new Error('Failed to load Google Maps'));
+            document.head.appendChild(script);
+        });
+    })();
+    return googleMapsLoadPromise;
+}
+
+// map state: { map, driverMarker, directionsService, directionsRenderer,
+//              routeBasePolyline, routeShimmerPolyline, routeAnimationInterval }
+let mapState = null;
+
+async function initDriverMap() {
+    await loadGoogleMapsScript();
+    document.getElementById('map-load-hint').style.display = 'none';
+    const defaultCenter = { lat: -26.2041, lng: 28.0473 }; // used until location is granted
+    const map = new google.maps.Map(document.getElementById('map-canvas'), {
+        center: defaultCenter, zoom: 14, disableDefaultUI: true, zoomControl: false, gestureHandling: 'greedy'
+    });
+    const directionsService = new google.maps.DirectionsService();
+    const directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: false, suppressPolyline: true });
+    mapState = { map, driverMarker: null, directionsService, directionsRenderer, routeBasePolyline: null, routeShimmerPolyline: null, routeAnimationInterval: null };
+}
+
+function clearAnimatedRoute() {
+    if (!mapState) return;
+    if (mapState.routeAnimationInterval) { clearInterval(mapState.routeAnimationInterval); mapState.routeAnimationInterval = null; }
+    if (mapState.routeBasePolyline) { mapState.routeBasePolyline.setMap(null); mapState.routeBasePolyline = null; }
+    if (mapState.routeShimmerPolyline) { mapState.routeShimmerPolyline.setMap(null); mapState.routeShimmerPolyline = null; }
+    mapState.directionsRenderer.setDirections({ routes: [] });
+}
+
+// Draws the route as a solid black line with a looping, shimmering dash
+// traveling along it — identical marching-ants effect to the rider app.
+function drawAnimatedRoute(path) {
+    clearAnimatedRoute();
+    mapState.routeBasePolyline = new google.maps.Polyline({ path, map: mapState.map, strokeColor: '#000000', strokeOpacity: 1, strokeWeight: 5, zIndex: 1 });
+    mapState.routeShimmerPolyline = new google.maps.Polyline({
+        path, map: mapState.map, strokeOpacity: 0, zIndex: 2,
+        icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#ffffff', strokeWeight: 3, scale: 4 }, offset: '0%', repeat: '40px' }]
+    });
+    let offset = 0;
+    mapState.routeAnimationInterval = setInterval(() => {
+        offset = (offset + 1) % 100;
+        const icons = mapState.routeShimmerPolyline.get('icons');
+        icons[0].offset = offset + '%';
+        mapState.routeShimmerPolyline.set('icons', icons);
+    }, 30);
+}
+
+function updateDriverMarker(pos) {
+    if (!mapState || !mapState.map) return;
+    const iconUrl = RIDE_MARKER_ICON_URLS[driverProfile.vehicleType] || RIDE_MARKER_ICON_URLS.car;
+    if (!mapState.driverMarker) {
+        mapState.driverMarker = new google.maps.Marker({
+            position: pos, map: mapState.map, title: 'You',
+            icon: { url: iconUrl, scaledSize: new google.maps.Size(34, 34), anchor: new google.maps.Point(17, 17) },
+            zIndex: 10
+        });
+        mapState.map.setCenter(pos);
+    } else {
+        mapState.driverMarker.setPosition(pos);
+    }
+}
+
+// Draws a real driving route from the driver's current position to a target
+// point (pickup while heading there, drop-off once the trip is in progress)
+// and fits the map to it — same DirectionsService call the rider app makes.
+function routeToTarget(target) {
+    if (!mapState || !currentPos) return;
+    mapState.directionsService.route(
+        { origin: currentPos, destination: target, travelMode: google.maps.TravelMode.DRIVING },
+        (result, status) => {
+            if (status !== 'OK') { console.warn('[haba-driver] route failed', status); return; }
+            mapState.directionsRenderer.setDirections(result);
+            drawAnimatedRoute(result.routes[0].overview_path);
+            const bounds = new google.maps.LatLngBounds();
+            result.routes[0].overview_path.forEach(p => bounds.extend(p));
+            mapState.map.fitBounds(bounds, 60);
+        }
+    );
+}
+
+// ── Online / offline toggle ─────────────────────────────────────────────
+const onlineToggle = document.getElementById('online-toggle');
+const onlineLabel = document.getElementById('online-switch-label');
+onlineToggle.addEventListener('click', () => { isOnline ? goOffline() : goOnline(); });
+document.getElementById('hero-go-online').addEventListener('click', () => { if (!isOnline) goOnline(); });
+
+async function goOnline() {
+    if (!navigator.geolocation) { notify('Location access is required to go online.'); return; }
+    const user = auth.currentUser;
+    if (!user) return;
+
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+        currentPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        isOnline = true;
+        onlineToggle.classList.add('on');
+        onlineLabel.textContent = 'Online';
+        updateDriverMarker(currentPos);
+
+        const driverRef = ref(database, `drivers/${user.uid}`);
+        await set(driverRef, { lat: currentPos.lat, lng: currentPos.lng, online: true, vehicleType: driverProfile.vehicleType, updatedAt: serverTimestamp() });
+        onDisconnect(driverRef).update({ online: false });
+
+        watchId = navigator.geolocation.watchPosition((p) => {
+            currentPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+            update(driverRef, { lat: currentPos.lat, lng: currentPos.lng, updatedAt: serverTimestamp() });
+            updateDriverMarker(currentPos);
+            renderRequestsList();
+        }, (err) => console.warn('[haba-driver] location watch error', err), { enableHighAccuracy: true, maximumAge: 5000 });
+
+        subscribeToRequests();
+        showSheetStep('list');
+    }, () => { notify('Turn on location access to go online.'); }, { enableHighAccuracy: true });
+}
+
+async function goOffline() {
+    isOnline = false;
+    onlineToggle.classList.remove('on');
+    onlineLabel.textContent = 'Offline';
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (requestsUnsub) { requestsUnsub(); requestsUnsub = null; }
+    clearAnimatedRoute();
+    const user = auth.currentUser;
+    if (user) await update(ref(database, `drivers/${user.uid}`), { online: false });
+    showSheetStep('offline');
+}
+
+// ── Listening for ride requests ─────────────────────────────────────────
+function driverServesType(rideType) {
+    if (!driverProfile) return false;
+    if (rideType === driverProfile.vehicleType) return true;
+    if (rideType === 'womandrive' && driverProfile.vehicleType === 'car' && driverProfile.isWoman) return true;
+    return false;
+}
+
+function subscribeToRequests() {
+    const q = query(ref(database, 'ride_requests'), orderByChild('status'), equalTo('requested'), limitToLast(40));
+    const handler = (snap) => {
+        Object.keys(allRequestedRides).forEach(k => delete allRequestedRides[k]);
+        snap.forEach(child => { allRequestedRides[child.key] = child.val(); });
+        renderRequestsList();
+    };
+    onValue(q, handler);
+    requestsUnsub = () => off(q, 'value', handler);
+}
+
+function renderRequestsList() {
+    if (!isOnline || activeRequestId) return;
+    const list = document.getElementById('requests-list');
+    const sub = document.getElementById('online-sub');
+    if (!currentPos) return;
+
+    const entries = Object.entries(allRequestedRides)
+        .filter(([id, r]) => driverServesType(r.rideType) && !declinedIds.has(id) && r.pickup)
+        .map(([id, r]) => ({ id, r, distanceKm: haversineKm(currentPos, r.pickup) }))
+        .sort((a, b) => a.distanceKm - b.distanceKm)
+        .slice(0, 15);
+
+    sub.textContent = entries.length ? `${entries.length} request${entries.length > 1 ? 's' : ''} nearby` : 'Looking for nearby ride requests…';
+
+    if (entries.length === 0) {
+        list.innerHTML = `<div class="empty-note">No ride requests nearby right now. Stay online — you'll get notified the instant one comes in.</div>`;
+        return;
+    }
+
+    list.innerHTML = entries.map(({ id, r, distanceKm }) => {
+        const etaMin = Math.max(1, Math.round(distanceKm / 0.5));
+        return `
+        <div class="haba-ride-option-card" data-id="${id}">
+            <div class="haba-ride-option-icon">${RIDE_ICONS[r.rideType] || RIDE_ICONS.car}${seatBadgeHtml(r.rideType)}</div>
+            <div class="haba-ride-option-info">
+                <div class="haba-ride-option-name">${RIDE_LABELS[r.rideType] || 'Ride'} · ${escapeHtml(r.riderName || 'Rider')}</div>
+                <div class="haba-ride-option-meta">${distanceKm.toFixed(1)} km · ~${etaMin} min to pickup</div>
             </div>
+            <div class="haba-ride-option-price">R${(r.price || 0).toFixed(2)}</div>
+        </div>`;
+    }).join('');
 
-            <div id="map-canvas" class="map-canvas"></div>
+    list.querySelectorAll('.haba-ride-option-card').forEach(card => card.addEventListener('click', () => selectRequest(card.dataset.id)));
+}
 
-            <div id="panel-incoming" class="panel">
-                <h2>Nearby requests</h2>
-                <div id="incoming-list" class="incoming-list">
-                    <p class="empty-msg">Go online to see nearby ride requests.</p>
-                </div>
+// ── Selecting / confirming a request ────────────────────────────────────
+function selectRequest(requestId) {
+    const r = allRequestedRides[requestId];
+    if (!r) return;
+    selectedRequestId = requestId;
+    const distanceKm = currentPos ? haversineKm(currentPos, r.pickup) : null;
+    const etaMin = distanceKm !== null ? Math.max(1, Math.round(distanceKm / 0.5)) : null;
+
+    document.getElementById('confirm-icon').innerHTML = (RIDE_ICONS[r.rideType] || RIDE_ICONS.car) + seatBadgeHtml(r.rideType);
+    document.getElementById('confirm-title').textContent = RIDE_LABELS[r.rideType] || 'Ride';
+    document.getElementById('confirm-sub').textContent = r.riderName || 'Rider';
+    document.getElementById('confirm-distance').textContent = distanceKm !== null ? `${distanceKm.toFixed(1)} km` : '--';
+    document.getElementById('confirm-eta').textContent = etaMin !== null ? `${etaMin} min` : '--';
+    document.getElementById('confirm-price').textContent = `R${(r.price || 0).toFixed(2)}`;
+    document.getElementById('confirm-pickup').textContent = (r.pickup && r.pickup.label) || '--';
+    document.getElementById('confirm-dropoff').textContent = (r.dropoff && r.dropoff.label) || '--';
+
+    routeToTarget(r.pickup);
+    showSheetStep('confirm');
+}
+
+document.getElementById('btn-back-to-list').addEventListener('click', () => {
+    selectedRequestId = null;
+    clearAnimatedRoute();
+    if (currentPos) mapState.map.setCenter(currentPos);
+    showSheetStep('list');
+});
+document.getElementById('btn-decline').addEventListener('click', () => {
+    if (selectedRequestId) declinedIds.add(selectedRequestId);
+    selectedRequestId = null;
+    clearAnimatedRoute();
+    if (currentPos) mapState.map.setCenter(currentPos);
+    showSheetStep('list');
+    renderRequestsList();
+});
+document.getElementById('btn-accept').addEventListener('click', () => { if (selectedRequestId) acceptRequest(selectedRequestId); });
+
+// ── Accepting a ride (atomic claim, race-safe against other drivers) ────
+async function acceptRequest(requestId) {
+    const user = auth.currentUser;
+    if (!user) return;
+    const btn = document.getElementById('btn-accept');
+    btn.disabled = true; btn.textContent = 'Accepting…';
+    const reqRef = ref(database, `ride_requests/${requestId}`);
+    try {
+        const result = await runTransaction(reqRef, (current) => {
+            if (!current || current.status !== 'requested') return; // already taken — abort
+            current.status = 'accepted';
+            current.driverId = user.uid;
+            current.updatedAt = Date.now();
+            return current;
+        });
+        if (!result.committed || !result.snapshot.exists()) {
+            notify('That ride was just taken by another driver.');
+            showSheetStep('list');
+            return;
+        }
+        activeRequestId = requestId;
+        selectedRequestId = null;
+        subscribeToActiveRequest(requestId);
+    } catch (err) {
+        console.error('[haba-driver] accept failed', err);
+        notify("Couldn't accept that ride — try again.");
+    } finally { btn.disabled = false; btn.textContent = 'Accept ride'; }
+}
+
+function resumeActiveTripIfAny() {
+    const user = auth.currentUser;
+    if (!user) return;
+    const q = query(ref(database, 'ride_requests'), orderByChild('driverId'), equalTo(user.uid));
+    get(q).then(snap => {
+        snap.forEach(child => {
+            const r = child.val();
+            if (['accepted', 'arriving', 'in_progress'].includes(r.status)) {
+                activeRequestId = child.key;
+                subscribeToActiveRequest(child.key);
+            }
+        });
+    }).catch(() => {});
+}
+
+function subscribeToActiveRequest(requestId) {
+    if (activeRequestUnsub) activeRequestUnsub();
+    const reqRef = ref(database, `ride_requests/${requestId}`);
+    const handler = (snap) => {
+        const r = snap.val();
+        if (!r || ['completed', 'cancelled'].includes(r.status)) {
+            if (r && r.status === 'cancelled' && r.cancelledBy !== 'driver') notify('The rider cancelled this trip.');
+            teardownActiveTrip();
+            return;
+        }
+        renderTripPanel(requestId, r);
+    };
+    onValue(reqRef, handler);
+    activeRequestUnsub = () => off(reqRef, 'value', handler);
+}
+
+function teardownActiveTrip() {
+    if (activeRequestUnsub) { activeRequestUnsub(); activeRequestUnsub = null; }
+    activeRequestId = null;
+    clearAnimatedRoute();
+    if (currentPos && mapState) mapState.map.setCenter(currentPos);
+    showSheetStep(isOnline ? 'list' : 'offline');
+    loadTodayStats();
+}
+
+const STATUS_LABEL = { accepted: 'Head to pickup', arriving: "You've arrived", in_progress: 'Trip in progress' };
+const NEXT_ACTION = {
+    accepted: { label: "I've arrived at pickup", next: 'arriving' },
+    arriving: { label: 'Start trip', next: 'in_progress' },
+    in_progress: { label: 'Complete trip', next: 'completed' }
+};
+let lastTripStatusRendered = null;
+
+function mapsUrl(point) { return `https://www.google.com/maps/dir/?api=1&destination=${point.lat},${point.lng}`; }
+
+function renderTripPanel(requestId, r) {
+    showSheetStep('trip');
+    const panel = document.getElementById('step-trip');
+    const next = NEXT_ACTION[r.status];
+    const navTarget = r.status === 'in_progress' ? r.dropoff : r.pickup;
+    const canCancel = r.status !== 'in_progress';
+    const distanceKm = currentPos ? haversineKm(currentPos, navTarget) : null;
+    const etaMin = distanceKm !== null ? Math.max(1, Math.round(distanceKm / 0.5)) : null;
+
+    // Only re-route the map when the stage actually changes (accepted→arriving
+    // doesn't move the target; in_progress switches target to drop-off).
+    const routeKey = r.status === 'in_progress' ? 'to_dropoff' : 'to_pickup';
+    if (routeKey !== lastTripStatusRendered) { routeToTarget(navTarget); lastTripStatusRendered = routeKey; }
+
+    panel.innerHTML = `
+        <div class="haba-ride-trip-status">${STATUS_LABEL[r.status] || 'Trip'}</div>
+        <div class="haba-ride-driver-card">
+            <div class="haba-ride-driver-avatar" style="background-image:url('${r.riderPhoto || DEFAULT_AVATAR_URL}')"></div>
+            <div class="haba-ride-driver-info">
+                <div class="haba-ride-driver-name">${escapeHtml(r.riderName || 'Rider')}</div>
+                <div class="haba-ride-driver-vehicle">${r.seats || 1} seat${(r.seats || 1) > 1 ? 's' : ''} · ${RIDE_LABELS[r.rideType] || 'Ride'} · R${(r.price || 0).toFixed(2)}</div>
             </div>
-
-            <div id="panel-trip" class="panel" style="display:none;">
-                <div class="trip-status-badge" id="trip-status-badge">Accepted</div>
-                <div class="trip-rider-row">
-                    <div class="trip-rider-avatar" id="trip-rider-avatar"></div>
-                    <div>
-                        <div class="trip-rider-name" id="trip-rider-name">Rider</div>
-                        <div class="trip-rider-fare" id="trip-rider-fare">R0.00</div>
-                    </div>
-                </div>
-                <div class="trip-stops">
-                    <div class="trip-stop"><span class="dot pickup"></span><div><div class="stop-label">Pickup</div><div class="stop-value" id="trip-pickup-value">--</div></div></div>
-                    <div class="trip-stop"><span class="dot dropoff"></span><div><div class="stop-label">Drop-off</div><div class="stop-value" id="trip-dropoff-value">--</div></div></div>
-                </div>
-                <div class="trip-meta-row">
-                    <div><span id="trip-distance">--</span> km</div>
-                    <div><span id="trip-duration">--</span> min</div>
-                    <div><span id="trip-seats">--</span> seats</div>
-                </div>
-                <button class="btn-pill btn-primary" id="btn-trip-advance">Mark as arrived</button>
-                <button class="btn-danger-outline" id="btn-trip-cancel">Cancel trip</button>
-            </div>
-
-            <div class="earnings-strip">
-                Today: <strong id="earnings-today">R0.00</strong> · <span id="trips-today">0</span> trip<span id="trips-today-plural">s</span>
+            <div style="text-align:right;">
+                <div class="haba-ride-driver-eta">${etaMin !== null ? etaMin + ' min' : '--'}</div>
+                <div class="haba-ride-driver-eta-label">${r.status === 'in_progress' ? 'to drop-off' : 'away'}</div>
             </div>
         </div>
-    </div>
+        <div class="haba-ride-confirm-trip">
+            <div class="haba-ride-trip-row"><span class="haba-ride-trip-dot pickup"></span><div><div class="haba-ride-trip-label">Pickup</div><div class="haba-ride-trip-value">${escapeHtml((r.pickup && r.pickup.label) || '--')}</div></div></div>
+            <div class="haba-ride-trip-row"><span class="haba-ride-trip-dot dropoff"></span><div><div class="haba-ride-trip-label">Drop-off</div><div class="haba-ride-trip-value">${escapeHtml((r.dropoff && r.dropoff.label) || '--')}</div></div></div>
+        </div>
+        <div class="trip-actions">
+            <a class="btn-ghost btn-nav" target="_blank" rel="noopener" href="${mapsUrl(navTarget)}">Open in Maps app</a>
+            ${next ? `<button type="button" class="btn-primary" id="btn-trip-next">${next.label}</button>` : ''}
+            ${canCancel ? `<button type="button" class="haba-ride-trip-cancel" id="btn-trip-cancel">Cancel trip</button>` : ''}
+        </div>`;
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import {
-            getAuth, onAuthStateChanged, signOut,
-            signInWithEmailAndPassword, createUserWithEmailAndPassword
-        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-        import {
-            getDatabase, ref, get, set, update, onValue, off,
-            query, orderByChild, equalTo, runTransaction, onDisconnect, serverTimestamp
-        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
+    if (next) document.getElementById('btn-trip-next').addEventListener('click', () => advanceTrip(requestId, next.next));
+    if (canCancel) document.getElementById('btn-trip-cancel').addEventListener('click', () => cancelTrip(requestId));
+}
 
-        // Same Firebase project as the Haba rider app (index.html).
-        const firebaseConfig = {
-            apiKey: "AIzaSyBQSPwpVbGrdCuOoyitAeWQHIeipj2MgIY",
-            authDomain: "newstart-64c43.firebaseapp.com",
-            databaseURL: "https://newstart-64c43-default-rtdb.firebaseio.com",
-            projectId: "newstart-64c43",
-        };
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const database = getDatabase(app);
-        const functionsClient = getFunctions(app);
-        const getGoogleMapsApiKeyCallable = httpsCallable(functionsClient, 'getGoogleMapsApiKey');
+async function advanceTrip(requestId, nextStatus) {
+    const updates = { status: nextStatus, updatedAt: serverTimestamp() };
+    if (nextStatus === 'completed') updates.completedAt = serverTimestamp();
+    try {
+        await update(ref(database, `ride_requests/${requestId}`), updates);
+        if (nextStatus === 'completed') { notify('Trip completed.'); lastTripStatusRendered = null; teardownActiveTrip(); }
+    } catch (err) { notify("Couldn't update the trip — try again."); }
+}
 
-        const DEFAULT_AVATAR = 'data:image/svg+xml,' + encodeURIComponent(
-            `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" fill="#F0F2F5"/><circle cx="24" cy="18" r="8" fill="#C7C9D1"/><path d="M8 42c0-9 7-14 16-14s16 5 16 14" fill="#C7C9D1"/></svg>`
-        );
-        const RIDE_TYPE_ICON_URL = {
-            car: 'https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png',
-            bike: 'https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png',
-            scoot: 'https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png',
-            womandrive: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#E5148C"/><circle cx="16" cy="12" r="6" fill="none" stroke="#ffffff" stroke-width="2"/><path d="M16 18v7M12.5 22h7" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/></svg>`)
-        };
-        const RIDE_TYPE_LABEL = { car: 'Car', bike: 'Bike', scoot: 'Scoot', womandrive: 'Woman Drive Woman' };
-        const HABA_DRIVER_SEARCH_RADIUS_KM = 15;
-        const ACTIVE_STATUSES = ['accepted', 'arriving', 'in_progress'];
-
-        // ── State ─────────────────────────────────────────────────────────────
-        let currentUser = null;
-        let driverProfile = null;
-        let vehicleType = 'car';
-        let isOnline = false;
-        let watchId = null;
-        let driverLat = null, driverLng = null;
-
-        let incomingUnsub = null;
-        let activeRideUnsub = null;
-        let activeRideId = null;
-        let activeRideData = null;
-
-        let earningsToday = 0;
-        let tripsToday = 0;
-
-        let map = null, mapsLoadPromise = null, cachedMapsKey = null;
-        let driverMapMarker = null, pickupMapMarker = null, dropoffMapMarker = null;
-        let directionsService = null, directionsRenderer = null;
-
-        function $(id) { return document.getElementById(id); }
-
-        function notify(message, type = 'info') {
-            const el = document.createElement('div');
-            el.className = 'toast' + (type === 'error' ? ' error' : type === 'success' ? ' success' : '');
-            el.textContent = message;
-            $('toast-container').appendChild(el);
-            setTimeout(() => el.remove(), 3600);
-        }
-
-        function haversineKm(a, b) {
-            const R = 6371;
-            const dLat = (b.lat - a.lat) * Math.PI / 180;
-            const dLng = (b.lng - a.lng) * Math.PI / 180;
-            const lat1 = a.lat * Math.PI / 180, lat2 = b.lat * Math.PI / 180;
-            const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-            return R * 2 * Math.asin(Math.sqrt(h));
-        }
-
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-
-        // ── Splash ────────────────────────────────────────────────────────────
-        function hideSplash() {
-            const mark = $('splash-mark');
-            mark.classList.add('splash-exit');
-            requestAnimationFrame(() => requestAnimationFrame(() => mark.classList.add('splash-exit-run')));
-            setTimeout(() => { $('loading-overlay').classList.add('hidden'); }, 420);
-        }
-
-        // ── Auth screen: landing / sign-in / sign-up ─────────────────────────────
-        let authMode = 'signin';
-        function showAuthStep(step) {
-            $('auth-step-landing').style.display = step === 'landing' ? '' : 'none';
-            $('auth-step-email').style.display = step === 'email' ? '' : 'none';
-            $('auth-error').textContent = '';
-        }
-        function setAuthMode(mode) {
-            authMode = mode;
-            $('auth-email-heading').textContent = mode === 'signin' ? 'Sign in' : 'Become a driver';
-            $('auth-email-subtitle').textContent = mode === 'signin'
-                ? 'Enter your driver account email and password'
-                : 'Create a driver account with your email and a password';
-            $('btn-email-auth-submit').textContent = mode === 'signin' ? 'Sign In' : 'Create account';
-            $('btn-toggle-email-mode').textContent = mode === 'signin'
-                ? "Don't have a driver account? Sign up"
-                : 'Already drive with Haba? Sign in';
-        }
-
-        $('btn-landing-login').addEventListener('click', () => { setAuthMode('signin'); showAuthStep('email'); });
-        $('btn-landing-signup').addEventListener('click', () => { setAuthMode('signup'); showAuthStep('email'); });
-        $('btn-email-back-to-landing').addEventListener('click', () => showAuthStep('landing'));
-        $('btn-toggle-email-mode').addEventListener('click', () => setAuthMode(authMode === 'signin' ? 'signup' : 'signin'));
-
-        $('btn-email-auth-submit').addEventListener('click', async () => {
-            const email = $('auth-email').value.trim();
-            const password = $('auth-email-password').value;
-            const errorEl = $('auth-error');
-            const submitBtn = $('btn-email-auth-submit');
-            errorEl.textContent = '';
-            if (!email || !password) { errorEl.textContent = 'Enter an email and password.'; return; }
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Please wait…';
-            try {
-                if (authMode === 'signin') {
-                    await signInWithEmailAndPassword(auth, email, password);
-                } else {
-                    const cred = await createUserWithEmailAndPassword(auth, email, password);
-                    // Driver signups are logged on their OWN node — never written into the
-                    // rider app's `users/{uid}` tree, so driver accounts stay out of the
-                    // rider directory entirely.
-                    await set(ref(database, `driver_signups/${cred.user.uid}`), {
-                        email, createdAt: serverTimestamp(), role: 'driver'
-                    });
-                }
-                // onAuthStateChanged takes it from here.
-            } catch (err) {
-                errorEl.textContent = friendlyAuthError(err);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = authMode === 'signin' ? 'Sign In' : 'Create account';
-            }
-        });
-
-        function friendlyAuthError(err) {
-            const code = err && err.code || '';
-            if (code.includes('wrong-password') || code.includes('invalid-credential')) return 'Incorrect email or password.';
-            if (code.includes('user-not-found')) return 'No driver account with that email yet.';
-            if (code.includes('email-already-in-use')) return 'That email already has an account. Try signing in.';
-            if (code.includes('weak-password')) return 'Password should be at least 6 characters.';
-            if (code.includes('invalid-email')) return 'That email address looks invalid.';
-            return 'Something went wrong — please try again.';
-        }
-
-        $('btn-signout').addEventListener('click', async () => {
-            if (isOnline) await goOffline();
-            teardownActiveRideListener();
-            teardownIncomingListener();
-            await signOut(auth);
-        });
-
-        // ── Vehicle onboarding ───────────────────────────────────────────────
-        let obVehicleType = 'car';
-        document.querySelectorAll('#ob-vehicle-type .account-type-card').forEach(card => {
-            card.addEventListener('click', () => {
-                obVehicleType = card.dataset.type;
-                document.querySelectorAll('#ob-vehicle-type .account-type-card').forEach(c => {
-                    c.classList.toggle('selected', c === card);
-                    c.classList.toggle('womandrive-selected', c === card && c.dataset.type === 'womandrive');
-                });
-            });
-        });
-        $('btn-ob-vehicle-continue').addEventListener('click', () => {
-            $('ob-step-vehicle').style.display = 'none';
-            $('ob-step-details').style.display = '';
-        });
-        $('btn-ob-details-back').addEventListener('click', () => {
-            $('ob-step-details').style.display = 'none';
-            $('ob-step-vehicle').style.display = '';
-        });
-
-        $('form-onboarding-details').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const errorEl = $('onboarding-error');
-            errorEl.textContent = '';
-            const name = $('ob-name').value.trim();
-            const photoURL = $('ob-photo').value.trim();
-            const vehicleModel = $('ob-model').value.trim();
-            const vehicleColor = $('ob-color').value.trim();
-            const plate = $('ob-plate').value.trim();
-            if (!name || !vehicleModel || !vehicleColor || !plate) {
-                errorEl.textContent = 'Please fill in every field.';
-                return;
-            }
-            const profile = { name, photoURL, vehicleModel, vehicleColor, plate, rating: 5.0, vehicleType: obVehicleType };
-            try {
-                // driver_profiles + drivers are the two nodes the rider app already reads —
-                // both distinct from driver_signups and from the rider app's own users/ tree.
-                await set(ref(database, `driver_profiles/${currentUser.uid}`), profile);
-                await set(ref(database, `drivers/${currentUser.uid}`), {
-                    online: false, lat: null, lng: null, vehicleType: obVehicleType, updatedAt: serverTimestamp()
-                });
-                driverProfile = profile;
-                vehicleType = obVehicleType;
-                $('onboarding-screen').style.display = 'none';
-                await enterDashboard();
-            } catch (err) {
-                console.error('[driver] failed to save profile', err);
-                errorEl.textContent = "Couldn't save your profile — try again.";
-            }
-        });
-
-        // ── Auth state / bootstrapping ───────────────────────────────────────
-        onAuthStateChanged(auth, async (user) => {
-            teardownActiveRideListener();
-            teardownIncomingListener();
-            if (isOnline) await goOffline(true);
-
-            if (!user) {
-                currentUser = null;
-                driverProfile = null;
-                $('app-shell').classList.remove('active');
-                $('onboarding-screen').style.display = 'none';
-                showAuthStep('landing');
-                $('auth-screen').classList.add('active');
-                hideSplash();
-                return;
-            }
-
-            currentUser = user;
-            try {
-                const snap = await get(ref(database, `driver_profiles/${user.uid}`));
-                if (!snap.exists()) {
-                    $('auth-screen').classList.remove('active');
-                    $('app-shell').classList.remove('active');
-                    $('ob-step-vehicle').style.display = '';
-                    $('ob-step-details').style.display = 'none';
-                    $('onboarding-screen').style.display = 'block';
-                    hideSplash();
-                    return;
-                }
-                driverProfile = snap.val();
-                vehicleType = driverProfile.vehicleType || 'car';
-                $('auth-screen').classList.remove('active');
-                $('onboarding-screen').style.display = 'none';
-                await enterDashboard();
-            } catch (err) {
-                console.error('[driver] failed to load profile', err);
-                notify("Couldn't load your driver profile.", 'error');
-            }
-            hideSplash();
-        });
-
-        async function enterDashboard() {
-            $('app-shell').classList.add('active');
-            resetTripUIToIncoming();
-            initMap().catch(err => console.error('[driver] map failed to load', err));
-            await restoreActiveRideIfAny();
-        }
-
-        async function restoreActiveRideIfAny() {
-            try {
-                const q = query(ref(database, 'ride_requests'), orderByChild('driverId'), equalTo(currentUser.uid));
-                const snap = await get(q);
-                if (!snap.exists()) return;
-                let found = null;
-                snap.forEach(child => {
-                    const val = child.val();
-                    if (val && ACTIVE_STATUSES.includes(val.status)) { found = { id: child.key, data: val }; }
-                });
-                if (found) {
-                    activeRideId = found.id;
-                    subscribeActiveRide(found.id);
-                    $('online-toggle').checked = true;
-                    await goOnline(true);
-                }
-            } catch (err) {
-                console.error('[driver] failed to restore active ride', err);
-            }
-        }
-
-        // ── Online / offline ─────────────────────────────────────────────────
-        $('online-toggle').addEventListener('change', async (e) => {
-            if (e.target.checked) {
-                const ok = await goOnline();
-                if (!ok) e.target.checked = false;
-            } else {
-                if (activeRideId) {
-                    e.target.checked = true;
-                    notify("You can't go offline during an active trip.", 'info');
-                    return;
-                }
-                await goOffline();
-            }
-        });
-
-        function updateOnlineUI() {
-            $('online-toggle').disabled = !!activeRideId;
-            $('online-status-label').textContent = isOnline ? "You're online" : "You're offline";
-            $('online-status-sub').textContent = isOnline
-                ? `Looking for ${RIDE_TYPE_LABEL[vehicleType].toLowerCase()} requests nearby`
-                : 'Go online to start receiving ride requests';
-        }
-
-        async function goOnline(silent) {
-            if (!navigator.geolocation) {
-                notify('This browser has no location support — cannot go online.', 'error');
-                return false;
-            }
-            try {
-                const pos = await new Promise((resolve, reject) =>
-                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 })
-                );
-                driverLat = pos.coords.latitude;
-                driverLng = pos.coords.longitude;
-            } catch (err) {
-                notify('Location permission is required to go online.', 'error');
-                return false;
-            }
-
-            isOnline = true;
-            updateOnlineUI();
-
-            const driverRef = ref(database, `drivers/${currentUser.uid}`);
-            await update(driverRef, { online: true, lat: driverLat, lng: driverLng, vehicleType, updatedAt: serverTimestamp() });
-            onDisconnect(driverRef).update({ online: false });
-
-            watchId = navigator.geolocation.watchPosition((pos) => {
-                driverLat = pos.coords.latitude;
-                driverLng = pos.coords.longitude;
-                update(driverRef, { lat: driverLat, lng: driverLng, updatedAt: serverTimestamp() }).catch(() => {});
-                updateDriverMapMarker();
-                if (!activeRideId) renderIncomingList();
-            }, (err) => console.error('[driver] geolocation watch error', err), { enableHighAccuracy: true, maximumAge: 5000 });
-
-            if (!activeRideId) subscribeIncoming();
-            if (!silent) notify("You're online.", 'success');
-            return true;
-        }
-
-        async function goOffline(silent) {
-            isOnline = false;
-            updateOnlineUI();
-            if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
-            teardownIncomingListener();
-            try {
-                await update(ref(database, `drivers/${currentUser.uid}`), { online: false, updatedAt: serverTimestamp() });
-            } catch (err) { console.error('[driver] failed to go offline', err); }
-            if (!silent) notify("You're offline.", 'info');
-        }
-
-        // ── Incoming requests ────────────────────────────────────────────────
-        function subscribeIncoming() {
-            teardownIncomingListener();
-            const q = query(ref(database, 'ride_requests'), orderByChild('status'), equalTo('requested'));
-            const handler = (snap) => {
-                const all = [];
-                snap.forEach(child => all.push({ id: child.key, data: child.val() }));
-                renderIncomingList(all);
-            };
-            onValue(q, handler);
-            incomingUnsub = () => off(q, 'value', handler);
-        }
-        function teardownIncomingListener() { if (incomingUnsub) { incomingUnsub(); incomingUnsub = null; } }
-
-        let lastIncomingSnapshot = [];
-        function renderIncomingList(all) {
-            if (all) lastIncomingSnapshot = all;
-            const list = $('incoming-list');
-            if (activeRideId) return;
-
-            if (!isOnline) {
-                list.innerHTML = '<p class="empty-msg">Go online to see nearby ride requests.</p>';
-                return;
-            }
-
-            const matching = lastIncomingSnapshot
-                .filter(r => r.data.rideType === vehicleType)
-                .map(r => {
-                    const pickup = r.data.pickup || {};
-                    const distanceToPickup = (driverLat != null && typeof pickup.lat === 'number')
-                        ? haversineKm({ lat: driverLat, lng: driverLng }, { lat: pickup.lat, lng: pickup.lng })
-                        : null;
-                    return { ...r, distanceToPickup };
-                })
-                .filter(r => r.distanceToPickup === null || r.distanceToPickup <= HABA_DRIVER_SEARCH_RADIUS_KM)
-                .sort((a, b) => (a.distanceToPickup ?? 0) - (b.distanceToPickup ?? 0));
-
-            if (matching.length === 0) {
-                list.innerHTML = `<p class="empty-msg">No ${RIDE_TYPE_LABEL[vehicleType].toLowerCase()} requests nearby right now.</p>`;
-                return;
-            }
-
-            list.innerHTML = matching.map(r => {
-                const d = r.data;
-                const pickupLabel = (d.pickup && d.pickup.label) || 'Pickup';
-                const dropoffLabel = (d.dropoff && d.dropoff.label) || 'Drop-off';
-                const distanceAway = r.distanceToPickup !== null ? `${r.distanceToPickup.toFixed(1)} km away` : '';
-                const iconHtml = d.rideType === 'womandrive'
-                    ? `<img src="${RIDE_TYPE_ICON_URL.womandrive}" alt="">`
-                    : `<img src="${RIDE_TYPE_ICON_URL[d.rideType] || RIDE_TYPE_ICON_URL.car}" alt="">`;
-                return `<div class="ride-card" data-request-id="${r.id}">
-                    <div class="ride-card-top">
-                        <span class="ride-type-chip${d.rideType === 'womandrive' ? ' womandrive' : ''}">${iconHtml}${RIDE_TYPE_LABEL[d.rideType] || d.rideType}</span>
-                        <span class="ride-price">R${Number(d.price || 0).toFixed(2)}</span>
-                    </div>
-                    <div class="ride-route"><b>${escapeHtml(pickupLabel)}</b> → ${escapeHtml(dropoffLabel)}</div>
-                    <div class="ride-meta-row">
-                        <span>${(d.distanceKm ?? 0).toFixed(1)} km trip</span>
-                        <span>${Math.round(d.durationMin ?? 0)} min</span>
-                        ${distanceAway ? `<span>${distanceAway}</span>` : ''}
-                    </div>
-                    <button class="btn-accept" data-accept="${r.id}">Accept</button>
-                </div>`;
-            }).join('');
-
-            list.querySelectorAll('[data-accept]').forEach(btn => {
-                btn.addEventListener('click', () => acceptRequest(btn.dataset.accept));
-            });
-        }
-
-        // ── Accepting a request (transaction — first driver wins) ──────────────
-        async function acceptRequest(requestId) {
-            const reqRef = ref(database, `ride_requests/${requestId}`);
-            let result;
-            try {
-                result = await runTransaction(reqRef, (current) => {
-                    if (!current || current.status !== 'requested') return;
-                    current.status = 'accepted';
-                    current.driverId = currentUser.uid;
-                    current.updatedAt = serverTimestamp();
-                    return current;
-                });
-            } catch (err) {
-                console.error('[driver] accept transaction failed', err);
-                notify("Couldn't accept this ride — try again.", 'error');
-                return;
-            }
-            if (!result.committed || !result.snapshot.exists()) {
-                notify('Another driver already took this ride.', 'info');
-                return;
-            }
-            teardownIncomingListener();
-            activeRideId = requestId;
-            subscribeActiveRide(requestId);
-            notify('Ride accepted!', 'success');
-        }
-
-        // ── Active ride lifecycle ────────────────────────────────────────────
-        function subscribeActiveRide(requestId) {
-            teardownActiveRideListener();
-            const reqRef = ref(database, `ride_requests/${requestId}`);
-            const handler = (snap) => {
-                const request = snap.val();
-                if (!request) { finishActiveRide(); return; }
-                if (request.status === 'completed') { activeRideData = request; handleTripCompleted(request); return; }
-                if (request.status === 'cancelled') {
-                    notify(request.cancelledBy === 'rider' ? 'Rider cancelled the trip.' : 'Trip cancelled.', 'info');
-                    finishActiveRide();
-                    return;
-                }
-                activeRideData = request;
-                renderTripPanel(request);
-            };
-            onValue(reqRef, handler);
-            activeRideUnsub = () => off(reqRef, 'value', handler);
-        }
-        function teardownActiveRideListener() { if (activeRideUnsub) { activeRideUnsub(); activeRideUnsub = null; } }
-
-        function renderTripPanel(request) {
-            $('panel-incoming').style.display = 'none';
-            $('panel-trip').style.display = '';
-            updateOnlineUI();
-
-            const statusLabels = { accepted: 'Accepted — head to pickup', arriving: 'Arrived — waiting for rider', in_progress: 'Trip in progress' };
-            $('trip-status-badge').textContent = statusLabels[request.status] || request.status;
-            $('trip-rider-avatar').style.backgroundImage = `url('${request.riderPhoto || DEFAULT_AVATAR}')`;
-            $('trip-rider-name').textContent = request.riderName || 'Rider';
-            $('trip-rider-fare').textContent = `R${Number(request.price || 0).toFixed(2)} fare`;
-            $('trip-pickup-value').textContent = (request.pickup && request.pickup.label) || '--';
-            $('trip-dropoff-value').textContent = (request.dropoff && request.dropoff.label) || '--';
-            $('trip-distance').textContent = (request.distanceKm ?? 0).toFixed(1);
-            $('trip-duration').textContent = Math.round(request.durationMin ?? 0);
-            $('trip-seats').textContent = request.seats ?? '--';
-
-            const advanceBtn = $('btn-trip-advance');
-            const cancelBtn = $('btn-trip-cancel');
-            if (request.status === 'accepted') { advanceBtn.textContent = 'Mark as arrived'; advanceBtn.style.display = ''; cancelBtn.style.display = ''; }
-            else if (request.status === 'arriving') { advanceBtn.textContent = 'Start trip'; advanceBtn.style.display = ''; cancelBtn.style.display = ''; }
-            else if (request.status === 'in_progress') { advanceBtn.textContent = 'Complete trip'; advanceBtn.style.display = ''; cancelBtn.style.display = 'none'; }
-
-            renderTripOnMap(request);
-        }
-
-        $('btn-trip-advance').addEventListener('click', async () => {
-            if (!activeRideId || !activeRideData) return;
-            const next = { accepted: 'arriving', arriving: 'in_progress', in_progress: 'completed' }[activeRideData.status];
-            if (!next) return;
-            const btn = $('btn-trip-advance');
-            btn.disabled = true;
-            try {
-                await update(ref(database, `ride_requests/${activeRideId}`), { status: next, updatedAt: serverTimestamp() });
-            } catch (err) {
-                console.error('[driver] failed to advance trip status', err);
-                notify("Couldn't update the trip — try again.", 'error');
-            } finally { btn.disabled = false; }
-        });
-
-        $('btn-trip-cancel').addEventListener('click', async () => {
-            if (!activeRideId) return;
-            if (!confirm('Cancel this trip?')) return;
-            try {
-                await update(ref(database, `ride_requests/${activeRideId}`), { status: 'cancelled', cancelledBy: 'driver', updatedAt: serverTimestamp() });
-                notify('Trip cancelled.', 'info');
-            } catch (err) {
-                console.error('[driver] failed to cancel trip', err);
-                notify("Couldn't cancel — try again.", 'error');
-            }
-        });
-
-        function handleTripCompleted(request) {
-            const fare = Number(request.price || 0);
-            earningsToday += fare;
-            tripsToday += 1;
-            $('earnings-today').textContent = `R${earningsToday.toFixed(2)}`;
-            $('trips-today').textContent = tripsToday;
-            $('trips-today-plural').textContent = tripsToday === 1 ? '' : 's';
-            notify(`Trip complete — R${fare.toFixed(2)} earned.`, 'success');
-            finishActiveRide();
-        }
-
-        function finishActiveRide() {
-            teardownActiveRideListener();
-            activeRideId = null;
-            activeRideData = null;
-            clearTripMapOverlays();
-            resetTripUIToIncoming();
-            updateOnlineUI();
-            if (isOnline) subscribeIncoming();
-        }
-
-        function resetTripUIToIncoming() {
-            $('panel-trip').style.display = 'none';
-            $('panel-incoming').style.display = '';
-            renderIncomingList();
-        }
-
-        // ── Google Maps (optional polish; reuses the rider app's Cloud Function) ──
-        async function fetchMapsKey() {
-            if (cachedMapsKey) return cachedMapsKey;
-            try {
-                const result = await getGoogleMapsApiKeyCallable();
-                const key = (result.data && result.data.apiKey) || '';
-                if (key) cachedMapsKey = key;
-                return key;
-            } catch (err) {
-                console.error('[driver] getGoogleMapsApiKey failed', err);
-                return '';
-            }
-        }
-
-        function loadGoogleMapsScript() {
-            if (mapsLoadPromise) return mapsLoadPromise;
-            mapsLoadPromise = (async () => {
-                if (window.google && window.google.maps) return;
-                const key = await fetchMapsKey();
-                if (!key) throw new Error('No Google Maps API key available');
-                await new Promise((resolve, reject) => {
-                    window.__onDriverMapsLoaded = () => resolve();
-                    const script = document.createElement('script');
-                    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&callback=__onDriverMapsLoaded`;
-                    script.async = true;
-                    script.onerror = () => reject(new Error('Failed to load Google Maps'));
-                    document.head.appendChild(script);
-                });
-            })();
-            return mapsLoadPromise;
-        }
-
-        async function initMap() {
-            try {
-                await loadGoogleMapsScript();
-            } catch (err) {
-                $('map-canvas').style.display = 'none';
-                return;
-            }
-            const center = (driverLat != null) ? { lat: driverLat, lng: driverLng } : { lat: 0, lng: 0 };
-            map = new google.maps.Map($('map-canvas'), { center, zoom: 13, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy' });
-            directionsService = new google.maps.DirectionsService();
-            directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, preserveViewport: false });
-            updateDriverMapMarker();
-        }
-
-        function updateDriverMapMarker() {
-            if (!map || driverLat == null) return;
-            const pos = { lat: driverLat, lng: driverLng };
-            if (!driverMapMarker) {
-                driverMapMarker = new google.maps.Marker({
-                    position: pos, map,
-                    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#111111', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 }
-                });
-                map.setCenter(pos);
-            } else {
-                driverMapMarker.setPosition(pos);
-            }
-        }
-
-        function clearTripMapOverlays() {
-            if (pickupMapMarker) { pickupMapMarker.setMap(null); pickupMapMarker = null; }
-            if (dropoffMapMarker) { dropoffMapMarker.setMap(null); dropoffMapMarker = null; }
-            if (directionsRenderer) directionsRenderer.setDirections({ routes: [] });
-        }
-
-        function renderTripOnMap(request) {
-            if (!map) return;
-            clearTripMapOverlays();
-            const pickup = request.pickup, dropoff = request.dropoff;
-            if (pickup && typeof pickup.lat === 'number') {
-                pickupMapMarker = new google.maps.Marker({ position: { lat: pickup.lat, lng: pickup.lng }, map, icon: { url: RIDE_TYPE_ICON_URL[request.rideType] || RIDE_TYPE_ICON_URL.car, scaledSize: new google.maps.Size(28, 28) } });
-            }
-            if (dropoff && typeof dropoff.lat === 'number') {
-                dropoffMapMarker = new google.maps.Marker({ position: { lat: dropoff.lat, lng: dropoff.lng }, map, label: 'D' });
-            }
-            const origin = request.status === 'in_progress' ? pickup : { lat: driverLat, lng: driverLng };
-            const destination = request.status === 'in_progress' ? dropoff : pickup;
-            if (origin && destination && typeof origin.lat === 'number' && typeof destination.lat === 'number' && directionsService) {
-                directionsService.route({
-                    origin: { lat: origin.lat, lng: origin.lng },
-                    destination: { lat: destination.lat, lng: destination.lng },
-                    travelMode: google.maps.TravelMode.DRIVING
-                }, (result, status) => { if (status === 'OK') directionsRenderer.setDirections(result); });
-            }
-        }
-    </script>
+async function cancelTrip(requestId) {
+    try {
+        await update(ref(database, `ride_requests/${requestId}`), { status: 'cancelled', cancelledBy: 'driver', updatedAt: serverTimestamp() });
+        notify('Trip cancelled.');
+        lastTripStatusRendered = null;
+        teardownActiveTrip();
+    } catch (err) { notify("Couldn't cancel the trip — try again."); }
+}
+</script>
 </body>
 </html>
