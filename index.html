@@ -85,6 +85,21 @@
     .checkbox-row label{ font-size:13.5px; color:var(--text-primary); font-weight:600; margin:0; }
     .field-hint{ font-size:11.5px; color:var(--text-secondary); margin-top:5px; }
 
+    /* ── Identity verification step (onboarding) ─────────────────────── */
+    .ob-steps{ display:flex; gap:6px; margin:16px 0 0; }
+    .ob-step{ flex:1; height:4px; border-radius:4px; background:var(--border-color); transition:background 0.25s var(--ease-smooth); }
+    .ob-step.on{ background:var(--primary-blue); }
+    .verify-card{ margin-top:22px; border:1.5px solid var(--border-color); border-radius:18px; padding:20px 18px; background:var(--bg-base); }
+    .verify-icon{ width:48px; height:48px; border-radius:14px; background:var(--bg-alt); display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
+    .verify-icon svg{ width:24px; height:24px; stroke:var(--primary-blue); }
+    .verify-card.declined .verify-icon svg{ stroke:var(--danger-red); }
+    .verify-title{ font-size:17px; font-weight:800; }
+    .verify-text{ font-size:13.5px; color:var(--text-secondary); line-height:1.5; margin:6px 0 16px; }
+    .verify-consent{ margin:0 0 14px; align-items:flex-start; }
+    .verify-consent input{ margin-top:2px; flex-shrink:0; }
+    .verify-consent label{ font-size:12.5px; line-height:1.45; font-weight:500; color:var(--text-secondary); }
+    .verify-consent a{ color:var(--primary-blue); font-weight:700; }
+
     /* ── Loading ─────────────────────────────────────────────────────── */
     #screen-loading{ flex:1; display:flex; align-items:center; justify-content:center; }
     .spinner{ width:34px; height:34px; border:3px solid var(--border-color); border-top-color:var(--primary-blue); border-radius:50%; animation:spin 0.8s linear infinite; }
@@ -300,6 +315,7 @@
                 <div class="field"><label>Email</label><input type="email" id="signup-email" autocomplete="email" required></div>
                 <div class="field"><label>Password</label><input type="password" id="signup-password" autocomplete="new-password" minlength="6" required></div>
                 <button type="submit" class="btn-primary" id="btn-signup">Create driver account</button>
+                <div class="field-hint" style="text-align:center; margin-top:10px;">Next, you'll verify your identity and add your vehicle.</div>
             </form>
             <div class="auth-switch" id="auth-switch-text">New driver? <a id="link-to-signup">Sign up</a></div>
         </div>
@@ -308,9 +324,24 @@
     <div id="screen-onboarding" style="display:none;">
         <div class="auth-inner">
             <div class="brand-mark">Haba</div>
-            <div class="brand-sub">Set up your vehicle</div>
-            <div class="auth-error" id="onboarding-error"></div>
-            <form id="form-onboarding" style="margin-top:22px;">
+            <div class="brand-sub" id="ob-sub">Verify your identity</div>
+            <div class="ob-steps" aria-hidden="true"><span class="ob-step on" id="ob-step-1"></span><span class="ob-step" id="ob-step-2"></span></div>
+            <div class="auth-error" id="onboarding-error" style="margin-top:14px;"></div>
+
+            <div class="verify-card" id="ob-verify" style="display:none;">
+                <div class="verify-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+                </div>
+                <div class="verify-title" id="verify-title"></div>
+                <div class="verify-text" id="verify-text"></div>
+                <div class="checkbox-row verify-consent" id="verify-consent-row">
+                    <input type="checkbox" id="verify-consent">
+                    <label for="verify-consent">I agree that Haba and Didit, our verification provider, may process my ID and selfie to verify me. See Didit's <a href="https://didit.me/terms/verification-privacy-notice" target="_blank" rel="noopener">privacy notice</a>.</label>
+                </div>
+                <button type="button" class="btn-primary" id="btn-verify" style="margin-top:0;"></button>
+            </div>
+
+            <form id="form-onboarding" style="display:none; margin-top:22px;">
                 <div class="field">
                     <label>Vehicle type</label>
                     <select id="ob-vehicle-type">
@@ -471,6 +502,8 @@ const auth = getAuth(app);
 const database = getDatabase(app);
 const functionsClient = getFunctions(app);
 const getGoogleMapsApiKeyCallable = httpsCallable(functionsClient, 'getGoogleMapsApiKey');
+const createDriverVerificationCallable = httpsCallable(functionsClient, 'createDriverVerification');
+const refreshDriverVerificationCallable = httpsCallable(functionsClient, 'refreshDriverVerification');
 
 // Backstop for the CSS-only long-press/select-none rules above: some mobile browsers
 // still surface a "Save image" / "Copy" callout or context menu on long-press even with
@@ -625,6 +658,123 @@ formSignup.addEventListener('submit', async (e) => {
     finally { btn.disabled = false; btn.textContent = 'Create driver account'; }
 });
 
+// ── Identity verification (Didit) ─────────────────────────────────────
+// Onboarding is now two steps: 1) verify identity, 2) vehicle details. The Didit session is
+// created server-side (createDriverVerification) and the result arrives via a signed webhook,
+// which writes driver_verifications/{uid}. The client only ever *reads* that node — the SDK's
+// onComplete result is treated as a hint, never as proof. Database rules enforce the gate.
+const DIDIT_SDK_SRC = 'https://unpkg.com/@didit-protocol/sdk-web@0.3.1/dist/didit-sdk.umd.min.js';
+const VERIFY_COPY = {
+    not_started: { title: 'Verify your identity', text: "Riders trust Haba because every driver is checked. You'll scan your ID document and take a selfie. It takes about 2 minutes.", cta: 'Start verification', consent: true },
+    in_progress: { title: 'Finish your verification', text: "You started verifying but didn't finish. Pick up where you left off.", cta: 'Continue verification', consent: false },
+    resubmit:    { title: 'One more try', text: 'We need a clearer photo or scan for part of your verification. Continue to fix it.', cta: 'Continue verification', consent: false },
+    in_review:   { title: 'Your verification is in review', text: "We're checking your details. The next step unlocks as soon as you're approved. You can close the app and come back.", cta: 'Check status', consent: false },
+    declined:    { title: "We couldn't verify you", text: "Your ID or selfie didn't pass. Use a valid, undamaged ID in good light, then try again.", cta: 'Try again', consent: true },
+    expired:     { title: 'Your session expired', text: 'Start a new verification to continue.', cta: 'Start verification', consent: true }
+};
+VERIFY_COPY.abandoned = VERIFY_COPY.not_started;
+
+const obVerifyCard = document.getElementById('ob-verify');
+const obOnboardingForm = document.getElementById('form-onboarding');
+const btnVerify = document.getElementById('btn-verify');
+const verifyConsent = document.getElementById('verify-consent');
+const verifyConsentRow = document.getElementById('verify-consent-row');
+const obError = document.getElementById('onboarding-error');
+let verificationStatus = null;
+let verifyBusy = false;
+let verifyUnsub = null;
+
+function showObError(msg) { obError.textContent = msg; obError.style.display = 'block'; }
+function clearObError() { obError.style.display = 'none'; }
+
+function syncVerifyButton() {
+    const copy = VERIFY_COPY[verificationStatus] || VERIFY_COPY.not_started;
+    verifyConsentRow.style.display = copy.consent ? 'flex' : 'none';
+    btnVerify.textContent = verifyBusy ? 'One moment…' : copy.cta;
+    btnVerify.disabled = verifyBusy || (copy.consent && !verifyConsent.checked);
+}
+verifyConsent.addEventListener('change', syncVerifyButton);
+
+function renderVerification(status) {
+    verificationStatus = status;
+    const approved = status === 'approved';
+    obVerifyCard.style.display = approved ? 'none' : 'block';
+    obOnboardingForm.style.display = approved ? 'block' : 'none';
+    document.getElementById('ob-sub').textContent = approved ? 'Set up your vehicle' : 'Verify your identity';
+    document.getElementById('ob-step-2').classList.toggle('on', approved);
+    if (!approved) {
+        const copy = VERIFY_COPY[status] || VERIFY_COPY.not_started;
+        obVerifyCard.classList.toggle('declined', status === 'declined');
+        document.getElementById('verify-title').textContent = copy.title;
+        document.getElementById('verify-text').textContent = copy.text;
+        syncVerifyButton();
+    }
+}
+
+// Resolves after the first snapshot so the screen never flashes the wrong step.
+function watchVerification(uid) {
+    return new Promise((resolve) => {
+        stopWatchingVerification();
+        let first = true;
+        const done = () => { if (first) { first = false; resolve(); } };
+        verifyUnsub = onValue(ref(database, `driver_verifications/${uid}`), (snap) => {
+            const v = snap.val();
+            renderVerification(v && v.status ? v.status : 'not_started');
+            done();
+        }, (err) => {
+            console.warn('[haba-driver] verification watch failed', err);
+            renderVerification('not_started');
+            done();
+        });
+    });
+}
+function stopWatchingVerification() { if (verifyUnsub) { verifyUnsub(); verifyUnsub = null; } }
+
+function loadDiditSdk() {
+    if (window.DiditSDK && window.DiditSDK.DiditSdk) return Promise.resolve(window.DiditSDK.DiditSdk);
+    return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = DIDIT_SDK_SRC;
+        s.onload = () => (window.DiditSDK && window.DiditSDK.DiditSdk) ? resolve(window.DiditSDK.DiditSdk) : reject(new Error('Verification tool unavailable.'));
+        s.onerror = () => { s.remove(); reject(new Error("Couldn't load the verification tool. Check your connection and try again.")); };
+        document.head.appendChild(s);
+    });
+}
+
+async function refreshVerification() {
+    const { data } = await refreshDriverVerificationCallable();
+    return data && data.status;
+}
+
+btnVerify.addEventListener('click', async () => {
+    if (verifyBusy) return;
+    clearObError();
+    verifyBusy = true; syncVerifyButton();
+    try {
+        if (verificationStatus === 'in_review') {
+            const status = await refreshVerification();
+            if (status === 'in_review') notify("Still in review. We'll unlock the next step once you're approved.");
+            return;
+        }
+        const { data } = await createDriverVerificationCallable();
+        if (data.status === 'approved' || data.status === 'in_review' || !data.url) return; // listener updates the screen
+        const DiditSdk = await loadDiditSdk();
+        DiditSdk.shared.onComplete = (result) => {
+            if (result.type === 'failed') {
+                showObError((result.error && result.error.message) || 'Verification failed. Try again.');
+            } else if (result.type === 'completed') {
+                // Hint only. Ask the server to reconcile with Didit in case the webhook is slow.
+                refreshVerification().catch(() => {});
+            }
+        };
+        DiditSdk.shared.startVerification({ url: data.url, configuration: { closeModalOnComplete: true } });
+    } catch (err) {
+        showObError(err.message || "Couldn't start verification. Try again.");
+    } finally {
+        verifyBusy = false; syncVerifyButton();
+    }
+});
+
 // ── Vehicle onboarding ────────────────────────────────────────────────
 const obVehicleType = document.getElementById('ob-vehicle-type');
 const obWomanRow = document.getElementById('ob-woman-row');
@@ -636,6 +786,7 @@ document.getElementById('form-onboarding').addEventListener('submit', async (e) 
     e.preventDefault();
     const user = auth.currentUser;
     if (!user) return;
+    if (verificationStatus !== 'approved') { showObError('Verify your identity first.'); return; }
     const btn = document.getElementById('btn-onboarding');
     btn.disabled = true; btn.textContent = 'Saving…';
     const vehicleType = obVehicleType.value;
@@ -653,8 +804,10 @@ document.getElementById('form-onboarding').addEventListener('submit', async (e) 
         driverProfile = profile;
         enterApp();
     } catch (err) {
-        document.getElementById('onboarding-error').textContent = err.message || 'Could not save your details — try again.';
-        document.getElementById('onboarding-error').style.display = 'block';
+        // The database rules only allow a new driver profile once verification is approved.
+        showObError(/permission_denied/i.test(`${err.code} ${err.message}`)
+            ? 'Verify your identity first, then add your vehicle.'
+            : (err.message || 'Could not save your details — try again.'));
     } finally { btn.disabled = false; btn.textContent = 'Start driving'; }
 });
 
@@ -680,7 +833,8 @@ const allRequestedRides = {};
 // have. This intentionally never checks driver_signup_pending as a gate —
 // that node is now just an optional audit trail written at signup.
 onAuthStateChanged(auth, async (user) => {
-    if (!user) { driverProfile = null; showScreen('auth'); return; }
+    stopWatchingVerification();
+    if (!user) { driverProfile = null; verificationStatus = null; showScreen('auth'); return; }
     showScreen('loading');
     try {
         const profileSnap = await get(ref(database, `driver_profiles/${user.uid}`));
@@ -689,7 +843,9 @@ onAuthStateChanged(auth, async (user) => {
             enterApp();
         } else {
             // No driver profile yet on this uid — could be a brand-new signup or an
-            // existing Haba rider adding driver access. Either way: onboarding.
+            // existing Haba rider adding driver access. Either way: onboarding, which
+            // starts with identity verification and unlocks vehicle details once approved.
+            await watchVerification(user.uid);
             showScreen('onboarding');
         }
     } catch (err) {
@@ -699,6 +855,7 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 function enterApp() {
+    stopWatchingVerification();
     const user = auth.currentUser;
     document.getElementById('header-avatar').style.backgroundImage = `url('${driverProfile.photoURL || DEFAULT_AVATAR_URL}')`;
     document.getElementById('header-name').textContent = driverProfile.name || 'Driver';
