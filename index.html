@@ -219,6 +219,15 @@
     .sheet-row span:first-child{ color:var(--text-secondary); font-weight:600; }
     .sheet-row span:last-child{ font-weight:700; }
 
+    /* ── Profile photo (the only editable part of the profile) ──────── */
+    .profile-photo-block{ display:flex; flex-direction:column; align-items:center; margin:2px 0 10px; }
+    .profile-photo-btn{ position:relative; width:88px; height:88px; padding:0; border:none; background:none; cursor:pointer; border-radius:50%; }
+    .profile-photo{ display:block; width:100%; height:100%; border-radius:50%; background:var(--bg-alt) center/cover no-repeat; border:2px solid var(--border-color); transition:opacity 0.2s; }
+    .profile-photo-btn.busy .profile-photo{ opacity:0.45; }
+    .profile-photo-btn.busy::after{ content:''; position:absolute; top:50%; left:50%; width:26px; height:26px; margin:-13px 0 0 -13px; border:3px solid var(--border-color); border-top-color:var(--primary-blue); border-radius:50%; animation:spin 0.8s linear infinite; }
+    .profile-photo-badge{ position:absolute; right:-2px; bottom:-2px; width:30px; height:30px; border-radius:50%; background:var(--primary-blue); border:2.5px solid #fff; display:flex; align-items:center; justify-content:center; }
+    .profile-photo-badge svg{ width:14px; height:14px; stroke:#fff; }
+
     /* ── Profile sheet tabs (Profile / History) ─────────────────────── */
     .profile-tab-panel{ display:none; }
     .profile-tab-panel.active{ display:block; }
@@ -356,7 +365,7 @@
                     <div class="verify-status-row"><span>Status</span><span class="verify-chip" id="verify-chip">—</span></div>
                     <button type="button" class="btn-primary" id="btn-verify-continue" style="margin-top:0;">Continue verification</button>
                     <button type="button" class="btn-ghost" id="btn-verify-recheck" style="margin-top:10px;">Check status</button>
-                    <div class="field-hint" style="text-align:center; margin-top:12px;">Verification opens in a new tab. Come back here when you're done. This page updates on its own.</div>
+                    <div class="field-hint" id="verify-hint" style="text-align:center; margin-top:12px;">Verification opens in a new tab. Come back here when you're done. This page updates on its own.</div>
                 </div>
             </div>
 
@@ -381,6 +390,7 @@
                 <div class="field-hint">Only shown for car drivers, since Woman Drive Woman rides use cars.</div>
                 <button type="submit" class="btn-primary" id="btn-onboarding" style="margin-top:16px;">Start driving</button>
             </form>
+            <div class="auth-switch"><a id="btn-ob-signout">Sign out</a></div>
         </div>
     </div>
 
@@ -473,6 +483,14 @@
     </div>
 
     <div id="profile-panel-details" class="profile-tab-panel active">
+        <div class="profile-photo-block">
+            <button type="button" class="profile-photo-btn" id="btn-change-photo" aria-label="Change profile photo">
+                <span class="profile-photo" id="profile-photo"></span>
+                <span class="profile-photo-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L17 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+            </button>
+            <div class="field-hint" style="text-align:center;">Tap to change your photo</div>
+            <input type="file" id="photo-input" accept="image/*" hidden>
+        </div>
         <div class="sheet-row"><span>Vehicle</span><span id="sheet-vehicle">—</span></div>
         <div class="sheet-row"><span>Plate</span><span id="sheet-plate">—</span></div>
         <div class="sheet-row"><span>Rating</span><span id="sheet-rating">—</span></div>
@@ -504,6 +522,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-functions.js";
 import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 // Same Firebase project as the main Haba app — drivers and riders share one
 // Realtime Database (ride_requests/{id}, driver_profiles/{uid}, drivers/{uid}),
@@ -522,6 +541,7 @@ const auth = getAuth(app);
 const database = getDatabase(app);
 const functionsClient = getFunctions(app);
 const firestoreDb = getFirestore(app);
+const storage = getStorage(app);
 const getGoogleMapsApiKeyCallable = httpsCallable(functionsClient, 'getGoogleMapsApiKey');
 // Same Didit/Latch cloud functions the main Haba app uses for Haba Verification.
 const startBusinessVerificationCallable = httpsCallable(functionsClient, 'startBusinessVerification');
@@ -685,12 +705,17 @@ formSignup.addEventListener('submit', async (e) => {
 // session, and the diditWebhook writes the outcome to Firestore businessVerifications/{uid}
 // ({ status, url }). This screen only reads that doc. Only "Approved" unlocks vehicle setup.
 const RESTART_STATUSES = new Set(['Declined', 'Expired', 'Kyc Expired', 'Abandoned']);
+// Statuses where the driver has a Didit session to go back to. If the session link is
+// missing for one of these we fall back to the start form instead of a dead button.
+const RESUME_STATUSES = new Set(['Not Started', 'In Progress', 'Pending', 'Resubmitted']);
 const VERIFY_STATUS_UI = {
     'Approved':    { label: 'Approved', cls: 'ok' },
     'Declined':    { label: 'Declined', cls: 'bad' },
     'In Review':   { label: 'In review', cls: 'warn' },
     'In Progress': { label: 'In progress', cls: 'info' },
-    'Resubmitted': { label: 'Needs another try', cls: 'warn' }
+    'Pending':     { label: 'Pending', cls: 'info' },
+    'Not Started': { label: 'Not started', cls: '' },
+    'Resubmitted': { label: 'Resubmit needed', cls: 'warn' }
 };
 
 const obVerifyCard = document.getElementById('ob-verify');
@@ -717,10 +742,12 @@ function syncVerifyButtons() {
     btnVerifyContinue.disabled = verifyBusy;
 }
 verifyConsent.addEventListener('change', syncVerifyButtons);
+document.getElementById('btn-ob-signout').addEventListener('click', () => { stopWatchingVerification(); signOut(auth); });
 
 function renderVerification(data) {
     verificationDoc = data || null;
     const status = verificationDoc && verificationDoc.status;
+    const url = verificationDoc && verificationDoc.url;
     const approved = status === 'Approved';
     obVerifyCard.style.display = approved ? 'none' : 'block';
     obOnboardingForm.style.display = approved ? 'block' : 'none';
@@ -728,7 +755,9 @@ function renderVerification(data) {
     document.getElementById('ob-step-2').classList.toggle('on', approved);
     if (approved) return;
 
-    const restart = !status || RESTART_STATUSES.has(status);
+    // Start over when there's nothing to resume: never started, a dead session
+    // (declined / expired / abandoned), or a resumable status whose link is missing.
+    const restart = !status || RESTART_STATUSES.has(status) || (RESUME_STATUSES.has(status) && !url);
     verifyFormStep.style.display = restart ? 'block' : 'none';
     verifyStatusStep.style.display = restart ? 'none' : 'block';
     obVerifyCard.classList.toggle('declined', status === 'Declined');
@@ -736,10 +765,19 @@ function renderVerification(data) {
     const title = document.getElementById('verify-title');
     const text = document.getElementById('verify-text');
     if (restart) {
-        title.textContent = status === 'Declined' ? "We couldn't verify you" : 'Verify your identity';
-        text.textContent = status === 'Declined'
-            ? "Your last attempt was declined. Check your details, use a valid ID in good light, then start again."
-            : "Riders trust Haba because every driver is checked. You'll scan your ID document and take a selfie. It takes about 2 minutes.";
+        if (status === 'Declined') {
+            title.textContent = "We couldn't verify you";
+            text.textContent = 'Your last attempt was declined. Check your details, use a valid ID in good light, then start again.';
+        } else if (status === 'Expired' || status === 'Kyc Expired' || status === 'Abandoned') {
+            title.textContent = 'Your verification needs a fresh start';
+            text.textContent = 'Your last verification session ran out before it was finished. Start a new one. It takes about 2 minutes.';
+        } else if (status) {
+            title.textContent = 'Finish your verification';
+            text.textContent = "You've started verification but it isn't complete. Start again to pick it up. It takes about 2 minutes.";
+        } else {
+            title.textContent = 'Verify your identity';
+            text.textContent = "Riders trust Haba because every driver is checked. You'll scan your ID document and take a selfie. It takes about 2 minutes.";
+        }
         const u = auth.currentUser;
         const nameEl = document.getElementById('verify-name'), emailEl = document.getElementById('verify-email');
         if (u && !nameEl.value && u.displayName) nameEl.value = u.displayName;
@@ -749,10 +787,25 @@ function renderVerification(data) {
         const chip = document.getElementById('verify-chip');
         chip.textContent = ui.label;
         chip.className = 'verify-chip ' + ui.cls;
-        title.textContent = status === 'In Review' ? 'Your verification is in review' : 'Finish your verification';
-        text.textContent = status === 'In Review'
-            ? "We're checking your details. The next step unlocks as soon as you're approved."
-            : "Continue in Didit's secure flow, then come back here.";
+
+        const inReview = status === 'In Review';
+        btnVerifyContinue.style.display = inReview ? 'none' : 'block';
+        document.getElementById('verify-hint').style.display = inReview ? 'none' : 'block';
+        btnVerifyContinue.textContent = status === 'Resubmitted' ? 'Resubmit documents' : 'Continue verification';
+
+        if (inReview) {
+            title.textContent = 'Your verification is in review';
+            text.textContent = "We're checking your details. The next step unlocks as soon as you're approved.";
+        } else if (status === 'Resubmitted') {
+            title.textContent = 'Please resubmit your documents';
+            text.textContent = 'Didit needs another look. Reopen the verification and resubmit what it asks for.';
+        } else if (status === 'In Progress' || status === 'Pending') {
+            title.textContent = "Your verification isn't finished";
+            text.textContent = "Pick up where you left off in Didit's secure flow, then come back here.";
+        } else {
+            title.textContent = 'Finish your verification';
+            text.textContent = "You've started signing up but haven't verified yet. Continue in Didit's secure flow, then come back here.";
+        }
     }
     syncVerifyButtons();
 }
@@ -896,6 +949,10 @@ onAuthStateChanged(auth, async (user) => {
             // starts with identity verification and unlocks vehicle details once approved.
             await watchVerification(user.uid);
             showScreen('onboarding');
+            // The Didit webhook can lag behind what the driver actually did (e.g. they
+            // finished in Didit but closed the tab). Reconcile once on sign-in so the
+            // status they see is current, not whatever was last saved.
+            if (verificationDoc && verificationDoc.status && verificationDoc.status !== 'Approved') recheckVerification(true);
         }
     } catch (err) {
         notify("Couldn't load your driver profile.");
@@ -906,7 +963,7 @@ onAuthStateChanged(auth, async (user) => {
 function enterApp() {
     stopWatchingVerification();
     const user = auth.currentUser;
-    document.getElementById('header-avatar').style.backgroundImage = `url('${driverProfile.photoURL || DEFAULT_AVATAR_URL}')`;
+    setDriverPhotoUI(driverProfile.photoURL);
     document.getElementById('header-name').textContent = driverProfile.name || 'Driver';
     document.getElementById('header-rating').textContent = `★ ${(driverProfile.rating || 5).toFixed(1)} · ${RIDE_LABELS[driverProfile.vehicleType] || 'Car'}`;
     document.getElementById('hero-go-online-icon').innerHTML = RIDE_ICONS[driverProfile.vehicleType] || RIDE_ICONS.car;
@@ -922,6 +979,82 @@ function enterApp() {
         document.getElementById('map-load-hint').textContent = "Map couldn't load. Check that getGoogleMapsApiKey is deployed with its secret set.";
     });
 }
+
+// ── Profile photo ─────────────────────────────────────────────────────
+// The photo is the only part of a driver's profile they can edit here. Name, vehicle
+// and plate stay locked (they're tied to identity verification). The image is
+// centre-cropped and shrunk on the phone first, so uploads stay small and fast.
+const PHOTO_SIZE = 512;
+const PHOTO_MAX_INPUT_BYTES = 15 * 1024 * 1024;
+const photoInput = document.getElementById('photo-input');
+const btnChangePhoto = document.getElementById('btn-change-photo');
+let photoBusy = false;
+
+function setDriverPhotoUI(url) {
+    const css = `url('${url || DEFAULT_AVATAR_URL}')`;
+    document.getElementById('header-avatar').style.backgroundImage = css;
+    document.getElementById('profile-photo').style.backgroundImage = css;
+}
+
+async function loadImageSource(file) {
+    if (window.createImageBitmap) {
+        try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (_) { /* fall back below */ }
+    }
+    return await new Promise((resolve, reject) => {
+        const img = new Image();
+        const objUrl = URL.createObjectURL(file);
+        img.onload = () => { URL.revokeObjectURL(objUrl); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error('unreadable image')); };
+        img.src = objUrl;
+    });
+}
+
+async function fileToSquareJpeg(file) {
+    const src = await loadImageSource(file);
+    const w = src.width, h = src.height;
+    const side = Math.min(w, h);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = Math.min(PHOTO_SIZE, side);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(src, (w - side) / 2, (h - side) / 2, side, side, 0, 0, canvas.width, canvas.height);
+    if (src.close) src.close();
+    return await new Promise((resolve, reject) => {
+        canvas.toBlob((b) => b ? resolve(b) : reject(new Error('encode failed')), 'image/jpeg', 0.86);
+    });
+}
+
+btnChangePhoto.addEventListener('click', () => { if (!photoBusy) photoInput.click(); });
+
+photoInput.addEventListener('change', async () => {
+    const file = photoInput.files && photoInput.files[0];
+    photoInput.value = '';   // lets the same file be picked again later
+    const user = auth.currentUser;
+    if (!file || !user || !driverProfile || photoBusy) return;
+    if (!file.type.startsWith('image/')) { notify('Please choose an image file.'); return; }
+    if (file.size > PHOTO_MAX_INPUT_BYTES) { notify('That image is too large. Pick one under 15 MB.'); return; }
+
+    photoBusy = true; btnChangePhoto.classList.add('busy');
+    try {
+        const blob = await fileToSquareJpeg(file);
+        const fileRef = storageRef(storage, `driver_photos/${user.uid}/profile.jpg`);
+        await uploadBytes(fileRef, blob, { contentType: 'image/jpeg', cacheControl: 'public,max-age=3600' });
+        // Cache-buster: the path is fixed, so without it phones can keep showing the old photo.
+        const url = (await getDownloadURL(fileRef)) + '&v=' + Date.now();
+        // Only photoURL is written, so nothing else on the profile can change here.
+        await update(ref(database, `driver_profiles/${user.uid}`), { photoURL: url });
+        driverProfile.photoURL = url;
+        setDriverPhotoUI(url);
+        // Keep the shared Haba login in step too. Not critical, so a failure here is ignored.
+        updateProfile(user, { photoURL: url }).catch((err) => console.warn('[haba-driver] auth photo sync failed', err));
+        notify('Profile photo updated.');
+    } catch (err) {
+        console.error('[haba-driver] photo update failed', err);
+        notify("Couldn't update your photo. Try again.");
+    } finally {
+        photoBusy = false; btnChangePhoto.classList.remove('busy');
+    }
+});
 
 // ── Profile sheet ─────────────────────────────────────────────────────
 const profileSheet = document.getElementById('profile-sheet');
