@@ -1424,6 +1424,67 @@ document.getElementById('map-recenter').addEventListener('click', () => {
     else locateDriverOnMap();
 });
 
+// ── Sounds ──────────────────────────────────────────────────────────────
+// Tones are synthesised with the Web Audio API, so there are no audio files to host
+// or load. Browsers only allow audio after a user gesture, so the context is unlocked
+// on the first tap anywhere (and again right when the driver taps "go online").
+let audioCtx = null;
+function getAudioCtx() {
+    if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        audioCtx = new AC();
+    }
+    return audioCtx;
+}
+function unlockAudio() {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    // A silent blip fully unlocks audio on iOS Safari.
+    try { const b = ctx.createBufferSource(); b.buffer = ctx.createBuffer(1, 1, 22050); b.connect(ctx.destination); b.start(0); } catch (_) {}
+}
+['touchend', 'click'].forEach(evt => document.addEventListener(evt, unlockAudio, { passive: true }));
+
+// notes: [{ f: Hz, at: seconds from now, dur: seconds }]
+function playTones(notes, peak) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const start = () => {
+        const t0 = ctx.currentTime + 0.03;
+        notes.forEach(({ f, at, dur }) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.value = f;
+            gain.gain.setValueAtTime(0.0001, t0 + at);
+            gain.gain.exponentialRampToValueAtTime(peak, t0 + at + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.start(t0 + at); osc.stop(t0 + at + dur + 0.05);
+        });
+    };
+    if (ctx.state === 'suspended') ctx.resume().then(start).catch(() => {});
+    else start();
+}
+
+// Going online: a short, friendly rising chime.
+function playOnlineSound() {
+    playTones([
+        { f: 659.25, at: 0,    dur: 0.20 },
+        { f: 880.00, at: 0.14, dur: 0.20 },
+        { f: 1318.5, at: 0.28, dur: 0.45 }
+    ], 0.28);
+}
+// New ride request: a louder double "ding-ding", twice, plus a buzz where supported.
+function playRequestSound() {
+    playTones([
+        { f: 987.77, at: 0,    dur: 0.22 }, { f: 1318.5, at: 0.16, dur: 0.30 },
+        { f: 987.77, at: 0.60, dur: 0.22 }, { f: 1318.5, at: 0.76, dur: 0.40 }
+    ], 0.45);
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+}
+
 // ── Online / offline toggle ─────────────────────────────────────────────
 const onlineToggle = document.getElementById('online-toggle');
 const onlineLabel = document.getElementById('online-switch-label');
@@ -1431,6 +1492,7 @@ onlineToggle.addEventListener('click', () => { isOnline ? goOffline() : goOnline
 document.getElementById('hero-go-online').addEventListener('click', () => { if (!isOnline) goOnline(); });
 
 async function goOnline() {
+    unlockAudio();   // still inside the tap, so the browser allows sound later
     if (!navigator.geolocation) { notify('Location access is required to go online.'); return; }
     const user = auth.currentUser;
     if (!user) return;
@@ -1440,6 +1502,7 @@ async function goOnline() {
         isOnline = true;
         onlineToggle.classList.add('on');
         onlineLabel.textContent = 'Online';
+        playOnlineSound();
         updateDriverMarker(currentPos);
 
         const driverRef = ref(database, `drivers/${user.uid}`);
@@ -1480,10 +1543,24 @@ function driverServesType(rideType) {
 
 function subscribeToRequests() {
     const q = query(ref(database, 'ride_requests'), orderByChild('status'), equalTo('requested'), limitToLast(40));
+    // Requests already waiting when the driver goes online are seeded silently (the
+    // "online" chime covers that moment). After that, any new request they could
+    // actually serve rings once.
+    const seenRequestIds = new Set();
+    let seeded = false;
     const handler = (snap) => {
+        const fresh = [];
+        snap.forEach(child => {
+            if (!seenRequestIds.has(child.key)) { seenRequestIds.add(child.key); fresh.push({ id: child.key, r: child.val() }); }
+        });
         Object.keys(allRequestedRides).forEach(k => delete allRequestedRides[k]);
         snap.forEach(child => { allRequestedRides[child.key] = child.val(); });
         renderRequestsList();
+        if (seeded && isOnline && !activeRequestId &&
+            fresh.some(({ id, r }) => r.pickup && driverServesType(r.rideType) && !declinedIds.has(id))) {
+            playRequestSound();
+        }
+        seeded = true;
     };
     onValue(q, handler);
     requestsUnsub = () => off(q, 'value', handler);
