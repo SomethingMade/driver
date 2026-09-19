@@ -859,6 +859,26 @@ async function initDriverMap() {
     const directionsService = new google.maps.DirectionsService();
     const directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: false, suppressPolyline: true });
     mapState = { map, driverMarker: null, directionsService, directionsRenderer, routeBasePolyline: null, routeShimmerPolyline: null, routeAnimationInterval: null };
+    locateDriverOnMap();
+}
+
+// Opens the map on the driver's real position (not the Johannesburg fallback), even
+// before they go online. One-shot fix — the continuous watch still only runs online.
+function locateDriverOnMap() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+        // If the driver already went online, the live watch owns currentPos.
+        if (!isOnline) currentPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (!mapState || !currentPos) return;
+        if (mapState.driverMarker) {
+            if (!activeRequestId) mapState.map.setCenter(currentPos);
+        } else {
+            updateDriverMarker(currentPos); // creates the marker and centers on it
+        }
+    }, (err) => {
+        console.warn('[haba-driver] initial location unavailable', err);
+        if (err && err.code === 1) notify('Turn on location access to see where you are on the map.');
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
 }
 
 function clearAnimatedRoute() {
@@ -896,7 +916,7 @@ function updateDriverMarker(pos) {
             icon: { url: iconUrl, scaledSize: new google.maps.Size(34, 34), anchor: new google.maps.Point(17, 17) },
             zIndex: 10
         });
-        mapState.map.setCenter(pos);
+        if (!activeRequestId) mapState.map.setCenter(pos);
     } else {
         mapState.driverMarker.setPosition(pos);
     }
