@@ -106,7 +106,23 @@
 
     /* ── Map + sheet stage ───────────────────────────────────────────── */
     .map-stage{ position:relative; flex:1; min-height:0; background:var(--bg-alt); }
-    #map-canvas{ position:absolute; inset:0; pointer-events:none; }
+    #map-canvas{ position:absolute; inset:0; touch-action:none; }
+    .map-fab{ position:absolute; top:14px; right:14px; z-index:4; width:44px; height:44px; border-radius:50%; border:none; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,0.22); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:transform 0.15s; }
+    .map-fab:active{ transform:scale(0.93); }
+    /* Uber-style pickup / drop-off markers with pop-up tags */
+    .map-point{ position:absolute; width:0; height:0; }
+    .map-dot{ position:absolute; left:0; top:0; width:18px; height:18px; transform:translate(-50%,-50%); background:#111; box-shadow:0 0 0 2.5px #fff, 0 2px 8px rgba(0,0,0,0.35); }
+    .map-dot::after{ content:''; position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px; background:#fff; }
+    .map-dot.circle, .map-dot.circle::after{ border-radius:50%; }
+    .map-dot.square{ border-radius:3px; } .map-dot.square::after{ border-radius:1px; }
+    .map-tag{ position:absolute; top:0; transform:translateY(-50%); display:flex; align-items:stretch; background:#fff; border-radius:4px; overflow:hidden; box-shadow:0 2px 10px rgba(0,0,0,0.28); cursor:pointer; white-space:nowrap; font-family:'Inter',sans-serif; }
+    .map-point.side-right .map-tag{ left:22px; } .map-point.side-left .map-tag{ right:22px; }
+    .mc-min{ background:#111; color:#fff; padding:6px 10px; display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:44px; }
+    .mc-min b{ font-size:19px; font-weight:700; line-height:1; } .mc-min span{ font-size:10px; font-weight:600; letter-spacing:0.5px; margin-top:2px; }
+    .mc-body{ padding:8px 6px 8px 11px; display:flex; flex-direction:column; justify-content:center; max-width:150px; }
+    .mc-title{ font-size:15px; font-weight:700; color:#111; overflow:hidden; text-overflow:ellipsis; line-height:1.25; }
+    .mc-sub{ font-size:14px; font-weight:500; color:#8A8A8E; overflow:hidden; text-overflow:ellipsis; line-height:1.25; }
+    .mc-chev{ align-self:center; padding:0 10px 0 4px; font-size:20px; font-weight:700; color:#111; line-height:1; }
     #map-canvas .gm-style-cc, #map-canvas a[href^="https://maps.google.com/maps"]{ display:none !important; }
     .map-load-hint{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; text-align:center; padding:30px; font-size:13px; color:var(--text-secondary); background:var(--bg-alt); }
 
@@ -333,6 +349,7 @@
 
         <div class="map-stage">
             <div id="map-canvas"></div>
+            <button type="button" class="map-fab" id="map-recenter" aria-label="Recenter map"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
             <div class="map-load-hint" id="map-load-hint">Loading map…</div>
 
             <div class="haba-ride-sheet" id="ride-sheet">
@@ -847,18 +864,41 @@ function loadGoogleMapsScript() {
 //              routeBasePolyline, routeShimmerPolyline, routeAnimationInterval }
 let mapState = null;
 
+// Light, muted basemap (white roads, soft grey land, pale green parks) — Uber-style.
+const HABA_MAP_STYLE = [
+    { elementType: 'geometry', stylers: [{ color: '#F1F1F1' }] },
+    { elementType: 'labels.icon', stylers: [{ saturation: -100 }, { lightness: 15 }] },
+    { elementType: 'labels.text.fill', stylers: [{ color: '#5F6673' }] },
+    { elementType: 'labels.text.stroke', stylers: [{ color: '#FFFFFF' }, { weight: 3 }] },
+    { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
+    { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: '#8A8F98' }] },
+    { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#EFEFEF' }] },
+    { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#E9E9E9' }] },
+    { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+    { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#DCEBD3' }] },
+    { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#6F8A63' }] },
+    { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#FFFFFF' }] },
+    { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#E6E6E6' }] },
+    { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#8A8F98' }] },
+    { featureType: 'road.highway', elementType: 'geometry.fill', stylers: [{ color: '#C5CEE8' }] },
+    { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#B3BEDD' }] },
+    { featureType: 'transit.line', elementType: 'geometry', stylers: [{ color: '#E0E0E0' }] },
+    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#C9D8EC' }] },
+    { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#7A8CA8' }] }
+];
+
 async function initDriverMap() {
     await loadGoogleMapsScript();
     document.getElementById('map-load-hint').style.display = 'none';
     const defaultCenter = { lat: -26.2041, lng: 28.0473 }; // used until location is granted
     const map = new google.maps.Map(document.getElementById('map-canvas'), {
         center: defaultCenter, zoom: 14, disableDefaultUI: true, zoomControl: false,
-        gestureHandling: 'none', draggable: false, scrollwheel: false, disableDoubleClickZoom: true,
-        keyboardShortcuts: false, clickableIcons: false
+        gestureHandling: 'greedy', draggable: true, scrollwheel: true, disableDoubleClickZoom: false,
+        keyboardShortcuts: false, clickableIcons: false, styles: HABA_MAP_STYLE, backgroundColor: '#F1F1F1'
     });
     const directionsService = new google.maps.DirectionsService();
-    const directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: false, suppressPolyline: true });
-    mapState = { map, driverMarker: null, directionsService, directionsRenderer, routeBasePolyline: null, routeShimmerPolyline: null, routeAnimationInterval: null };
+    const directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, suppressPolyline: true });
+    mapState = { map, driverMarker: null, directionsService, directionsRenderer, routeBasePolyline: null, routeShimmerPolyline: null, routeAnimationInterval: null, overlays: [], routeBounds: null };
     locateDriverOnMap();
 }
 
@@ -887,24 +927,18 @@ function clearAnimatedRoute() {
     if (mapState.routeBasePolyline) { mapState.routeBasePolyline.setMap(null); mapState.routeBasePolyline = null; }
     if (mapState.routeShimmerPolyline) { mapState.routeShimmerPolyline.setMap(null); mapState.routeShimmerPolyline = null; }
     mapState.directionsRenderer.setDirections({ routes: [] });
+    (mapState.overlays || []).forEach(o => o.setMap(null));
+    mapState.overlays = [];
+    mapState.routeBounds = null;
 }
 
-// Draws the route as a solid black line with a looping, shimmering dash
-// traveling along it — identical marching-ants effect to the rider app.
+// Draws the route as a solid black line (Uber style).
 function drawAnimatedRoute(path) {
     clearAnimatedRoute();
-    mapState.routeBasePolyline = new google.maps.Polyline({ path, map: mapState.map, strokeColor: '#000000', strokeOpacity: 1, strokeWeight: 5, zIndex: 1 });
-    mapState.routeShimmerPolyline = new google.maps.Polyline({
-        path, map: mapState.map, strokeOpacity: 0, zIndex: 2,
-        icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#ffffff', strokeWeight: 3, scale: 4 }, offset: '0%', repeat: '40px' }]
+    mapState.routeBasePolyline = new google.maps.Polyline({
+        path, map: mapState.map, strokeColor: '#000000', strokeOpacity: 1, strokeWeight: 4, zIndex: 1,
+        geodesic: false, icons: []
     });
-    let offset = 0;
-    mapState.routeAnimationInterval = setInterval(() => {
-        offset = (offset + 1) % 100;
-        const icons = mapState.routeShimmerPolyline.get('icons');
-        icons[0].offset = offset + '%';
-        mapState.routeShimmerPolyline.set('icons', icons);
-    }, 30);
 }
 
 function updateDriverMarker(pos) {
@@ -922,23 +956,134 @@ function updateDriverMarker(pos) {
     }
 }
 
-// Draws a real driving route from the driver's current position to a target
-// point (pickup while heading there, drop-off once the trip is in progress)
-// and fits the map to it — same DirectionsService call the rider app makes.
-function routeToTarget(target) {
-    if (!mapState || !currentPos) return;
-    mapState.directionsService.route(
-        { origin: currentPos, destination: target, travelMode: google.maps.TravelMode.DRIVING },
-        (result, status) => {
-            if (status !== 'OK') { console.warn('[haba-driver] route failed', status); return; }
-            mapState.directionsRenderer.setDirections(result);
-            drawAnimatedRoute(result.routes[0].overview_path);
-            const bounds = new google.maps.LatLngBounds();
-            result.routes[0].overview_path.forEach(p => bounds.extend(p));
-            mapState.map.fitBounds(bounds, 60);
+// ── Uber-style trip overlay: route + circle/square markers with pop-up tags ──
+let HtmlOverlayClass = null;
+function getHtmlOverlayClass() {
+    if (HtmlOverlayClass) return HtmlOverlayClass;
+    HtmlOverlayClass = class extends google.maps.OverlayView {
+        constructor(position, el) { super(); this.position = position; this.el = el; }
+        onAdd() { this.getPanes().overlayMouseTarget.appendChild(this.el); }
+        draw() {
+            const proj = this.getProjection();
+            if (!proj) return;
+            const pt = proj.fromLatLngToDivPixel(new google.maps.LatLng(this.position.lat, this.position.lng));
+            if (!pt) return;
+            this.el.style.left = pt.x + 'px';
+            this.el.style.top = pt.y + 'px';
         }
-    );
+        onRemove() { if (this.el.parentNode) this.el.parentNode.removeChild(this.el); }
+        // Puts the pop-up tag on whichever side has room, so it never runs off screen.
+        autoSide() {
+            const proj = this.getProjection();
+            if (!proj || !this.getMap()) return;
+            const pt = proj.fromLatLngToContainerPixel(new google.maps.LatLng(this.position.lat, this.position.lng));
+            const w = this.getMap().getDiv().clientWidth;
+            const left = pt && pt.x > w * 0.5;
+            this.el.classList.toggle('side-left', !!left);
+            this.el.classList.toggle('side-right', !left);
+        }
+    };
+    return HtmlOverlayClass;
 }
+
+function shortLabel(label, fallback) {
+    return String(label || '').split(',')[0].trim() || fallback;
+}
+
+function addMapPoint({ position, shape, minutes, title, sub }) {
+    const el = document.createElement('div');
+    el.className = 'map-point side-right';
+    const dot = document.createElement('div');
+    dot.className = 'map-dot ' + shape;
+    el.appendChild(dot);
+
+    const tag = document.createElement('div');
+    tag.className = 'map-tag';
+    if (minutes != null) {
+        const m = document.createElement('div');
+        m.className = 'mc-min';
+        const b = document.createElement('b'); b.textContent = minutes;
+        const u = document.createElement('span'); u.textContent = 'MIN';
+        m.append(b, u); tag.appendChild(m);
+    }
+    const body = document.createElement('div');
+    body.className = 'mc-body';
+    const t = document.createElement('div'); t.className = 'mc-title'; t.textContent = title;
+    body.appendChild(t);
+    if (sub) { const sb = document.createElement('div'); sb.className = 'mc-sub'; sb.textContent = sub; body.appendChild(sb); }
+    tag.appendChild(body);
+    const chev = document.createElement('div'); chev.className = 'mc-chev'; chev.textContent = '›';
+    tag.appendChild(chev);
+    el.appendChild(tag);
+
+    // Tapping a tag focuses the map on that point; keep taps/drags on the tag from moving the map.
+    if (google.maps.OverlayView.preventMapHitsAndGesturesFrom) google.maps.OverlayView.preventMapHitsAndGesturesFrom(tag);
+    tag.addEventListener('click', () => {
+        mapState.map.panTo(position);
+        if ((mapState.map.getZoom() || 0) < 16) mapState.map.setZoom(16);
+    });
+
+    const overlay = new (getHtmlOverlayClass())(position, el);
+    overlay.setMap(mapState.map);
+    mapState.overlays.push(overlay);
+    return overlay;
+}
+
+function fitRouteBounds(bounds) {
+    if (!mapState || !bounds) return;
+    const stage = document.querySelector('.map-stage');
+    const sheet = document.querySelector('.haba-ride-sheet');
+    const bottom = Math.min((sheet ? sheet.offsetHeight : 0) + 30, stage.clientHeight * 0.6);
+    const map = mapState.map;
+    map.fitBounds(bounds, { top: 90, right: 40, bottom, left: 40 });
+    google.maps.event.addListenerOnce(map, 'idle', () => {
+        const settle = () => mapState.overlays.forEach(o => o.autoSide());
+        if (map.getZoom() > 17) { map.setZoom(17); google.maps.event.addListenerOnce(map, 'idle', settle); }
+        else settle();
+    });
+}
+
+// stage 'to_pickup': driver → pickup → drop-off (whole trip, like the rider's Uber view).
+// stage 'to_dropoff': driver → drop-off.
+function showTripOnMap(r, stage) {
+    if (!mapState || !currentPos || !r) return;
+    const validPt = (pt) => pt && typeof pt.lat === 'number' && typeof pt.lng === 'number';
+    const hasDrop = validPt(r.dropoff);
+    const toPickup = stage === 'to_pickup' || !hasDrop;
+    const request = { origin: currentPos, travelMode: google.maps.TravelMode.DRIVING };
+    if (toPickup && hasDrop) {
+        request.waypoints = [{ location: r.pickup, stopover: true }];
+        request.destination = r.dropoff;
+    } else {
+        request.destination = toPickup ? r.pickup : r.dropoff;
+    }
+    mapState.directionsService.route(request, (result, status) => {
+        if (status !== 'OK') { console.warn('[haba-driver] route failed', status); return; }
+        const route = result.routes[0];
+        drawAnimatedRoute(route.overview_path);
+        const eta = Math.max(1, Math.round(route.legs[0].duration.value / 60));
+
+        if (toPickup) {
+            addMapPoint({ position: r.pickup, shape: 'circle', minutes: eta,
+                title: r.riderName || 'Rider', sub: shortLabel(r.pickup && r.pickup.label, 'Pickup') });
+        }
+        if (hasDrop) {
+            addMapPoint({ position: r.dropoff, shape: 'square', minutes: toPickup ? null : eta,
+                title: shortLabel(r.dropoff.label, 'Drop-off') });
+        }
+        const bounds = new google.maps.LatLngBounds();
+        route.overview_path.forEach(p => bounds.extend(p));
+        mapState.routeBounds = bounds;
+        fitRouteBounds(bounds);
+    });
+}
+
+document.getElementById('map-recenter').addEventListener('click', () => {
+    if (!mapState) return;
+    if (mapState.routeBounds) { fitRouteBounds(mapState.routeBounds); return; }
+    if (currentPos) { mapState.map.panTo(currentPos); if ((mapState.map.getZoom() || 0) < 15) mapState.map.setZoom(15); }
+    else locateDriverOnMap();
+});
 
 // ── Online / offline toggle ─────────────────────────────────────────────
 const onlineToggle = document.getElementById('online-toggle');
@@ -1057,7 +1202,7 @@ function selectRequest(requestId) {
     document.getElementById('confirm-pickup').textContent = (r.pickup && r.pickup.label) || '--';
     document.getElementById('confirm-dropoff').textContent = (r.dropoff && r.dropoff.label) || '--';
 
-    routeToTarget(r.pickup);
+    showTripOnMap(r, 'to_pickup');
     showSheetStep('confirm');
 }
 
@@ -1162,7 +1307,7 @@ function renderTripPanel(requestId, r) {
     // Only re-route the map when the stage actually changes (accepted→arriving
     // doesn't move the target; in_progress switches target to drop-off).
     const routeKey = r.status === 'in_progress' ? 'to_dropoff' : 'to_pickup';
-    if (routeKey !== lastTripStatusRendered) { routeToTarget(navTarget); lastTripStatusRendered = routeKey; }
+    if (routeKey !== lastTripStatusRendered) { showTripOnMap(r, r.status === 'in_progress' ? 'to_dropoff' : 'to_pickup'); lastTripStatusRendered = routeKey; }
 
     panel.innerHTML = `
         <div class="haba-ride-trip-status">${STATUS_LABEL[r.status] || 'Trip'}</div>
