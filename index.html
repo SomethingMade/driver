@@ -645,6 +645,23 @@ profileTabHistory.addEventListener('click', () => setProfileTab('history'));
 // so a trip completed since it was last viewed shows up without a page reload.
 document.getElementById('header-avatar').addEventListener('click', () => { if (profileTabHistory.classList.contains('active')) loadRideHistory(); });
 
+// Fetch this driver's own ride_requests as a plain array. Deliberately a full read
+// of ride_requests filtered client-side, rather than an indexed query
+// (orderByChild + equalTo) — Realtime Database evaluates an indexed query
+// differently from a plain read, and can reject one while allowing the other even
+// under rules that look like they should permit both, especially without a
+// matching ".indexOn". A plain read only depends on the single top-level ".read"
+// rule, so it's the more reliable way to pull "all of a driver's rides" here.
+async function fetchMyRideRequests(uid) {
+    const snap = await get(ref(database, 'ride_requests'));
+    const rides = [];
+    snap.forEach(child => {
+        const r = child.val();
+        if (r && r.driverId === uid) rides.push({ id: child.key, ...r });
+    });
+    return rides;
+}
+
 // ── Ride history: every completed/cancelled ride this driver has had ────
 async function loadRideHistory() {
     const user = auth.currentUser;
@@ -652,13 +669,7 @@ async function loadRideHistory() {
     if (!user) return;
     listEl.innerHTML = '<p class="empty-note">Loading your ride history…</p>';
     try {
-        const q = query(ref(database, 'ride_requests'), orderByChild('driverId'), equalTo(user.uid));
-        const snap = await get(q);
-        const rides = [];
-        snap.forEach(child => {
-            const r = child.val();
-            if (r.status === 'completed' || r.status === 'cancelled') rides.push({ id: child.key, ...r });
-        });
+        const rides = (await fetchMyRideRequests(user.uid)).filter(r => r.status === 'completed' || r.status === 'cancelled');
         rides.sort((a, b) => (b.completedAt || b.updatedAt || 0) - (a.completedAt || a.updatedAt || 0));
 
         const totalTrips = rides.filter(r => r.status === 'completed').length;
@@ -691,8 +702,10 @@ async function loadRideHistory() {
             </div>`;
         }).join('');
     } catch (err) {
-        console.warn('[haba-driver] ride history query failed (consider adding a driverId index)', err);
-        listEl.innerHTML = '<p class="empty-note">Couldn\'t load your ride history — try again later.</p>';
+        // Surfaced right in the sheet (not just the console) so the actual cause —
+        // e.g. "PERMISSION_DENIED" — is visible without opening dev tools.
+        console.error('[haba-driver] ride history load failed', err);
+        listEl.innerHTML = `<p class="empty-note">Couldn't load your ride history.<br><span style="opacity:0.7;">${escapeHtml(err.code || err.message || 'Unknown error')}</span></p>`;
     }
 }
 
@@ -701,18 +714,18 @@ async function loadTodayStats() {
     const user = auth.currentUser;
     if (!user) return;
     try {
-        const q = query(ref(database, 'ride_requests'), orderByChild('driverId'), equalTo(user.uid));
-        const snap = await get(q);
+        const rides = await fetchMyRideRequests(user.uid);
         let trips = 0, earnings = 0;
         const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-        snap.forEach(child => {
-            const r = child.val();
+        rides.forEach(r => {
             if (r.status === 'completed' && r.completedAt && r.completedAt >= startOfToday.getTime()) { trips++; earnings += (r.price || 0); }
         });
         document.getElementById('stat-trips').textContent = trips;
         document.getElementById('stat-earnings').textContent = `R${earnings.toFixed(0)}`;
     } catch (err) {
-        console.warn('[haba-driver] stats query failed (consider adding a driverId index)', err);
+        console.error('[haba-driver] today-stats load failed', err);
+        document.getElementById('stat-trips').textContent = '—';
+        document.getElementById('stat-earnings').textContent = '—';
     }
 }
 
@@ -990,16 +1003,10 @@ async function acceptRequest(requestId) {
 function resumeActiveTripIfAny() {
     const user = auth.currentUser;
     if (!user) return;
-    const q = query(ref(database, 'ride_requests'), orderByChild('driverId'), equalTo(user.uid));
-    get(q).then(snap => {
-        snap.forEach(child => {
-            const r = child.val();
-            if (['accepted', 'arriving', 'in_progress'].includes(r.status)) {
-                activeRequestId = child.key;
-                subscribeToActiveRequest(child.key);
-            }
-        });
-    }).catch(() => {});
+    fetchMyRideRequests(user.uid).then(rides => {
+        const active = rides.find(r => ['accepted', 'arriving', 'in_progress'].includes(r.status));
+        if (active) { activeRequestId = active.id; subscribeToActiveRequest(active.id); }
+    }).catch((err) => console.error('[haba-driver] resume active trip failed', err));
 }
 
 function subscribeToActiveRequest(requestId) {
