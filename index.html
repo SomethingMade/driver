@@ -83,7 +83,7 @@
 
     /* ── Map + sheet stage ───────────────────────────────────────────── */
     .map-stage{ position:relative; flex:1; min-height:0; background:var(--bg-alt); }
-    #map-canvas{ position:absolute; inset:0; }
+    #map-canvas{ position:absolute; inset:0; pointer-events:none; }
     #map-canvas .gm-style-cc, #map-canvas a[href^="https://maps.google.com/maps"]{ display:none !important; }
     .map-load-hint{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; text-align:center; padding:30px; font-size:13px; color:var(--text-secondary); background:var(--bg-alt); }
 
@@ -358,9 +358,9 @@ const RIDE_ICONS = {
     womandrive: `<svg viewBox="0 0 24 24" fill="none" stroke="#E5148C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M8.5 18h7"/></svg>`
 };
 const RIDE_MARKER_ICON_URLS = {
-    car: 'https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png',
-    bike: 'https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png',
-    scoot: 'https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png'
+    car: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="#111111" stroke="#ffffff" stroke-width="2"/><path d="M9 20l1.6-5.2c.3-1 1.2-1.6 2.2-1.6h8.4c1 0 1.9.6 2.2 1.6L25 20v3.2c0 .5-.4.9-.9.9h-.7a1 1 0 0 1-1-.9V22H11.6v1.2a1 1 0 0 1-1 .9h-.7a.9.9 0 0 1-.9-.9V20z" fill="#ffffff"/><circle cx="12.5" cy="20.5" r="1.4" fill="#111111"/><circle cx="21.5" cy="20.5" r="1.4" fill="#111111"/></svg>`),
+    bike: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="#111111" stroke="#ffffff" stroke-width="2"/><circle cx="11.5" cy="22" r="3" fill="none" stroke="#ffffff" stroke-width="1.8"/><circle cx="22.5" cy="22" r="3" fill="none" stroke="#ffffff" stroke-width="1.8"/><path d="M11.5 22l4-8h4l3 8M15.5 14h4M13 22h9" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`),
+    scoot: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="#111111" stroke="#ffffff" stroke-width="2"/><circle cx="11.5" cy="22.5" r="2.6" fill="none" stroke="#ffffff" stroke-width="1.8"/><circle cx="22.5" cy="22.5" r="2.6" fill="none" stroke="#ffffff" stroke-width="1.8"/><path d="M11.5 22.5h5l2-7h4M18.5 12.5h3M22.5 22.5v-4.5" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`)
 };
 const RIDE_LABELS = { car: 'Car', bike: 'Bike', scoot: 'Scoot', womandrive: 'Woman Drive Woman' };
 const RIDE_SEATS = { car: 4, bike: 1, scoot: 1, womandrive: 4 };
@@ -650,7 +650,9 @@ async function initDriverMap() {
     document.getElementById('map-load-hint').style.display = 'none';
     const defaultCenter = { lat: -26.2041, lng: 28.0473 }; // used until location is granted
     const map = new google.maps.Map(document.getElementById('map-canvas'), {
-        center: defaultCenter, zoom: 14, disableDefaultUI: true, zoomControl: false, gestureHandling: 'greedy'
+        center: defaultCenter, zoom: 14, disableDefaultUI: true, zoomControl: false,
+        gestureHandling: 'none', draggable: false, scrollwheel: false, disableDoubleClickZoom: true,
+        keyboardShortcuts: false, clickableIcons: false
     });
     const directionsService = new google.maps.DirectionsService();
     const directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: false, suppressPolyline: true });
@@ -688,7 +690,7 @@ function updateDriverMarker(pos) {
     const iconUrl = RIDE_MARKER_ICON_URLS[driverProfile.vehicleType] || RIDE_MARKER_ICON_URLS.car;
     if (!mapState.driverMarker) {
         mapState.driverMarker = new google.maps.Marker({
-            position: pos, map: mapState.map, title: 'You',
+            position: pos, map: mapState.map, title: 'You', clickable: false,
             icon: { url: iconUrl, scaledSize: new google.maps.Size(34, 34), anchor: new google.maps.Point(17, 17) },
             zIndex: 10
         });
