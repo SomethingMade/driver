@@ -307,7 +307,7 @@ import {
     createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import {
-    getDatabase, ref, get, set, update, onValue, off, query,
+    getDatabase, ref, get, set, update, remove, onValue, off, query,
     orderByChild, equalTo, limitToLast, serverTimestamp,
     runTransaction, onDisconnect
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
@@ -444,6 +444,10 @@ formSignup.addEventListener('submit', async (e) => {
             document.getElementById('signup-email').value.trim(),
             document.getElementById('signup-password').value);
         await updateProfile(cred.user, { displayName: document.getElementById('signup-name').value.trim() || 'Driver' });
+        // Marks this uid as mid-signup so onAuthStateChanged lets it through to vehicle
+        // onboarding — without this marker, an account with no driver_profiles is rejected
+        // (see onAuthStateChanged below), which is what keeps rider-only accounts out.
+        await set(ref(database, `driver_signup_pending/${cred.user.uid}`), { createdAt: serverTimestamp() });
     } catch (err) { showAuthError(err); }
     finally { btn.disabled = false; btn.textContent = 'Create driver account'; }
 });
@@ -472,6 +476,7 @@ document.getElementById('form-onboarding').addEventListener('submit', async (e) 
     };
     try {
         await set(ref(database, `driver_profiles/${user.uid}`), profile);
+        remove(ref(database, `driver_signup_pending/${user.uid}`)).catch(() => {});
         driverProfile = profile;
         enterApp();
     } catch (err) {
@@ -493,14 +498,30 @@ const declinedIds = new Set();
 const allRequestedRides = {};
 
 // ── Auth state ─────────────────────────────────────────────────────────
+// Driver-only gate: an account only gets in if it already has a
+// driver_profiles/{uid} record, or is mid-signup (driver_signup_pending/{uid},
+// written the moment a new account is created via the form above). Any other
+// account — including an existing Haba rider with no driver history — is
+// signed back out with an explanation rather than funneled into onboarding.
 onAuthStateChanged(auth, async (user) => {
     if (!user) { driverProfile = null; showScreen('auth'); return; }
     showScreen('loading');
     try {
-        const snap = await get(ref(database, `driver_profiles/${user.uid}`));
-        if (!snap.exists()) { showScreen('onboarding'); return; }
-        driverProfile = snap.val();
-        enterApp();
+        const profileSnap = await get(ref(database, `driver_profiles/${user.uid}`));
+        if (profileSnap.exists()) {
+            driverProfile = profileSnap.val();
+            enterApp();
+            return;
+        }
+        const pendingSnap = await get(ref(database, `driver_signup_pending/${user.uid}`));
+        if (pendingSnap.exists()) {
+            showScreen('onboarding');
+            return;
+        }
+        await signOut(auth);
+        setAuthMode('signin');
+        authError.textContent = "This account isn't registered as a driver. Use Sign up to register as a new driver.";
+        authError.style.display = 'block';
     } catch (err) {
         notify("Couldn't load your driver profile.");
         showScreen('auth');
