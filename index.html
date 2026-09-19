@@ -218,7 +218,7 @@
                     <select id="ob-vehicle-type">
                         <option value="car">Car</option>
                         <option value="bike">Bike</option>
-                        <option value="scoot">Scoot</option>
+                        <option value="scoot">Courier</option>
                     </select>
                 </div>
                 <div class="row-2">
@@ -386,7 +386,7 @@ const DEFAULT_AVATAR_URL = 'https://api.dicebear.com/7.x/initials/svg?seed=Drive
 const RIDE_ICONS = {
     car: `<img src="https://i.postimg.cc/vmgWq66R/file-000000004d648208990a7d21d5041430.png" alt="Car" draggable="false">`,
     bike: `<img src="https://i.postimg.cc/yNGHnbSd/file-00000000f17482118d09ee7d425c2b15.png" alt="Bike" draggable="false">`,
-    scoot: `<img src="https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png" alt="Scoot" draggable="false">`,
+    scoot: `<img src="https://i.postimg.cc/sxy0JYKs/file-0000000040c48211b12bd2b713d978d4.png" alt="Courier" draggable="false">`,
     womandrive: `<svg viewBox="0 0 24 24" fill="none" stroke="#E5148C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7M8.5 18h7"/></svg>`
 };
 const RIDE_MARKER_ICON_URLS = {
@@ -394,7 +394,7 @@ const RIDE_MARKER_ICON_URLS = {
     bike: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="#111111" stroke="#ffffff" stroke-width="2"/><circle cx="11.5" cy="22" r="3" fill="none" stroke="#ffffff" stroke-width="1.8"/><circle cx="22.5" cy="22" r="3" fill="none" stroke="#ffffff" stroke-width="1.8"/><path d="M11.5 22l4-8h4l3 8M15.5 14h4M13 22h9" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`),
     scoot: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="16" fill="#111111" stroke="#ffffff" stroke-width="2"/><circle cx="11.5" cy="22.5" r="2.6" fill="none" stroke="#ffffff" stroke-width="1.8"/><circle cx="22.5" cy="22.5" r="2.6" fill="none" stroke="#ffffff" stroke-width="1.8"/><path d="M11.5 22.5h5l2-7h4M18.5 12.5h3M22.5 22.5v-4.5" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`)
 };
-const RIDE_LABELS = { car: 'Car', bike: 'Bike', scoot: 'Scoot', womandrive: 'Woman Drive Woman' };
+const RIDE_LABELS = { car: 'Car', bike: 'Bike', scoot: 'Courier', womandrive: 'Woman Drive Woman' };
 const RIDE_SEATS = { car: 4, bike: 1, scoot: 1, womandrive: 4 };
 
 function seatBadgeHtml(rideType) {
